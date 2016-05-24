@@ -69,7 +69,6 @@ class ReferenceCube(object):
         else:
             self._region = newregion
         self.flat_region_ind = np.where(np.ravel(self._region)==1)[0]
-        
     @property
     def flat_region_ind(self):
         return self._flat_region_ind
@@ -79,6 +78,14 @@ class ReferenceCube(object):
         self._flat_region_ind = newfri
         self.flat_cube_region = self.flat_cube[:,self.flat_region_ind].copy()
         # for some reason, whether you work on a copy or a view affects the answer
+        self.npix_region = np.size(newfri)
+
+    @property
+    def npix_region(self):
+        return self._npix_region
+    @npix_region.setter
+    def npix_region(self, new_npix_region):
+        self._npix_region = new_npix_region
         
     # cube flattening
     @property
@@ -121,7 +128,9 @@ class ReferenceCube(object):
             Nref x Nref covariance matrix
         """
         refs_mean_sub = references - np.nanmean(references, axis=-1)[:,None]
-        return np.cov(refs_mean_sub)
+        covmat = np.cov(refs_mean_sub)
+        covmat *= (references.shape[-1] - 1) # undo np.cov normalization
+        return covmat
 
     def get_cube_subset(self, indices):
         """
@@ -141,8 +150,9 @@ class ReferenceCube(object):
         mask[:,targ_ix] = 0
         return self.covar_matrix[np.where(mask==1)].reshape(np.array(covmat_shape)-1)
 
-
-# Other useful functions
+############################
+## Other useful functions ##
+############################
 def sort_squared_distance(targ, references):
     """
     Calculate the euclidean distance between a target image and a set of reference images
@@ -171,5 +181,43 @@ def sort_squared_distance(targ, references):
     sorted_image_indices = np.argsort(dist)[start_index:]
     return sorted_image_indices
 
-        
-    
+
+def make_annular_mask(rad_range, phi_range, center, shape):
+    """
+    Make a mask that covers an annular section
+    rad_range: tuple of (inner radius, outer radius)
+    phi_range: tuple of (phi0, phi1) (0,2*pi)
+    center: row, col center of the image (where rad is measured from)
+    shape: image shape tuple
+    """
+    grid = np.mgrid[:np.float(shape[0]),:np.float(shape[1])]
+    grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center, -1, 0)
+    rad2D = np.linalg.norm(grid, axis=0)
+    phi2D = np.arctan2(grid[0],grid[1]) + np.pi # 0 to 2*pi
+    mask = np.zeros(shape)
+    if phi_range[0] <= phi_range[1]:
+        mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
+                      ((phi2D >= phi_range[0]) & (phi2D <= phi_range[1])))] = 1
+    elif phi_range[0] >= phi_range[1]:
+        mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
+                      ((phi2D >= phi_range[0]) | (phi2D <= phi_range[1])))] = 1
+    else:
+        pass
+    return mask
+
+def make_circular_mask(center, rad, shape):
+    """
+    Make a circular mask around a point, cutting it off for points outside the image
+    Inputs: 
+        center: (y,x) center of the mask
+        rad: radius of the circular mask
+        shape: shape of the image
+    Returns:
+        mask: 2D mask where 1 is in the mask and 0 is out of the mask (multiple it by the image)
+    """
+    grid = np.mgrid[:np.float(shape[0]),:np.float(shape[1])]
+    centered_grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center, -1, 0)
+    rad2D = np.linalg.norm(centered_grid, axis=0)
+    mask = np.zeros(shape)
+    mask[np.where(rad2D <= rad)] = 1
+    return mask
