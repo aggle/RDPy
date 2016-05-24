@@ -140,20 +140,36 @@ class ReferenceCube(object):
         mask[targ_ix,:] = 0
         mask[:,targ_ix] = 0
         return self.covar_matrix[np.where(mask==1)].reshape(np.array(covmat_shape)-1)
-        
-    
+
+
+# Other useful functions
+def sort_squared_distance(targ, references):
+    """
+    Calculate the euclidean distance between a target image and a set of reference images
+    Definition of distance: sqrt( sum( (im1 - im2 )**2 ) )
+    where the subtraction and squaring are pixelwise
+    Gives back the indices of this set of references, sorted by distance and taking care of the case
+    where the target itself is in the set of references
+    Input:
+    targ: Npix array
+    references: Nimg x Npix array
+    Returns:
+    sorted indices of the reference images, closest first
+    i.e. references[sorted_indices] gives you the images in order of distance
+    """
+    targ_norm = targ/np.nansum(targ)
+    ref_norm = references/np.nansum(references, axis=-1)[:,None]
+    ref_norm = ref_norm[None, :] # make sure dimensionality works out in all cases
+    # np.squeeze gets rid of the empty dimension we added above
+    dist = np.squeeze(np.sqrt( np.nansum( (targ_norm - ref_norm)**2, axis=-1) ))
+    # if dist == 0 for an image, it's clearly the same image and should be excluded
+    # use the fact that distance is positive definite so the same image will be closest
+    sorted_dist = np.sort(dist)
+    start_index = 0 
+    if np.where(sorted_dist==0): # target is in references
+        start_index = np.max(np.squeeze(np.where(sorted_dist==0)))+1
+    sorted_image_indices = np.argsort(dist)[start_index:]
+    return sorted_image_indices
 
         
-class NICMOS(object):
-    """
-    class defining properties of the NICMOS instrument
-    image shape, pixel scale, IWA
-    """
-    def __init__(self):
-        """
-        Set the pixel scale, angular resolution, coronagraph properties
-        """
-        self.Nx = 80 * units.pixel
-        self.Ny = 80 * units.pixel
-        self.pix_scale = 75 * units.mas/units.pixel
-        self.IWA = 400 * units.mas
+    
