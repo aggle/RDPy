@@ -24,9 +24,9 @@ class NICMOS(object):
         self.IWA = 400 * units.mas
 
     @property
-    def self.psf(self):
+    def psf(self):
         return self._psf
     @psf.setter
-    def self.psf(self, new_psf):
+    def psf(self, new_psf):
         # normalized PSF
         self._psf = new_psf / np.nansum(new_psf)
