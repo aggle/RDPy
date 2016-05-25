@@ -328,18 +328,16 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     # calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
     evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
 
-    # check if there are negative eignevalues as they will cause NaNs later that we have to remove
-    # the eigenvalues are ordered smallest to largest
-    check_nans = evals[-1] < 0
-
     # scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
     # we're going to recopy them to hopefully improve caching when doing matrix multiplication
     evals = np.copy(evals[::-1])
     evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
 
-    # keep an index of the negative eignevalues for future reference if there are any
-    if check_nans:
-        neg_evals = (np.where(evals < 0))[0]
+    # check if there are negative eignevalues as they will cause NaNs later that we have to remove
+    # the eigenvalues are ordered smallest to largest
+    check_nans = np.any(evals <= 0)
+    if check_nans: # keep an index of the negative eignevalues for future reference if there are any
+        neg_evals = np.squeeze(np.where(evals <= 0))
 
     # calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
@@ -439,3 +437,23 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         pass
         #return sub_img_rows_selected.transpose()
     return return_objs
+
+def FM_flux(kl_sub_img, psf, kl_basis):
+    """
+    Use forward modeling to determine the flux from a point source whose location is given by psf
+    Derivation can be found in Pueyo 2016, Appendix C
+    Input:
+        kl_sub_img: (Nimg x)Npix array of klip-subtracted images with a point source inside
+        psf: Npix array of the normalized PSF at a particular location
+        kl_basis: KL basis vectors up to as many as you want to include (must be same as number
+            used to generate kl_sub_img)
+    returns:
+        fm_flux: Nimg x len(kl_basis) array of fluxes for each klip-subtracted image provided
+    """
+    # first take care of just one image
+    # make sure the psf is normalized
+    psf = psf/np.nansum(psf)
+    numerator = np.dot(kl_sub_img, psf)
+    denominator = np.dot(psf,psf) - np.nansum(np.dot(kl_basis, psf)**2)
+    fm_flux = numerator/denominator
+    return fm_flux
