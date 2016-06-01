@@ -123,7 +123,23 @@ class ReferenceCube(object):
     @covar_matrix.setter
     def covar_matrix(self, newcm):
         self._covar_matrix = newcm
+    @property
+    def corr_matrix(self):
+        return self._corr_matrix
+    @corr_matrix.setter
+    def corr_matrix(self, newcm):
+        return self._corr_matrix
         
+        
+    def set_mask(self, mask):
+        """
+        Sets a new mask
+        Inputs:
+            mask: a 2-D binary mask, 1=included, 0=excluded (region = im*mask)
+        """
+        self.region = mask
+
+
     # Reference cube operations    
     def calc_covariance_matrix(self, references):
         """
@@ -138,13 +154,24 @@ class ReferenceCube(object):
         covmat *= (references.shape[-1] - 1) # undo np.cov normalization
         return covmat
 
+    def calc_correlation_matrix(self, references):
+        """
+        Calculate the Pearson correlation matrix for the references
+        Input:
+            References: Nref x Npix array of flattened reference images
+        Returns:
+            Nref x Nref correlation matrix
+        """
+        norm_refs = references/np.nansum(references, axis=-1)[:,None]
+        ref_corr = np.corrcoef(norm_refs)
+        return ref_corr
+
     def get_cube_subset(self, indices):
         """
         return a copy of the cube subset as given by indices
         """
         return self.cube[indices]
 
-        pass
     def get_reduced_covariance_matrix(self, targ_ix):
         """
         return a copy of the covariance matrix where the covariance with one of the
@@ -156,6 +183,20 @@ class ReferenceCube(object):
         mask[:,targ_ix] = 0
         return self.covar_matrix[np.where(mask==1)].reshape(np.array(covmat_shape)-1)
 
+    def get_covariance_matrix_subset(self, indices, covar_matrix=None):
+        """
+        return a copy of the covariance matrix with only the references indicated by the indexes
+        Input:
+            indices: index corresponding to the reference cube of images to include
+            covar_matrix: (optional) covariance matrix, if None use the object's covariance matrix
+        Returns:
+            new covariance matrix with only a subset of the selected images, shape is (len(indices),len(indices))
+        """
+        if covar_matrix is None:
+            covar_matrix = self.covar_matrix
+        return covar_matrix[np.meshgrid(indices, indices)].copy()
+
+    
 ############################
 ## Other useful functions ##
 ############################
@@ -204,11 +245,11 @@ def make_annular_mask(rad_range, phi_range, center, shape):
     if phi_range[0] <= phi_range[1]:
         mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
                       ((phi2D >= phi_range[0]) & (phi2D <= phi_range[1])))] = 1
-    elif phi_range[0] >= phi_range[1]:
+    elif phi_range[0] > phi_range[1]:
         mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
                       ((phi2D >= phi_range[0]) | (phi2D <= phi_range[1])))] = 1
     else:
-        pass
+        pass # should probably throw an exception or something
     return mask
 
 def make_circular_mask(center, rad, shape):
@@ -229,7 +270,7 @@ def make_circular_mask(center, rad, shape):
     return mask
 
 
-def inject_psf(img, psf, center, scaling=None):
+def inject_psf(img, psf, center, scaling=None, return_psf=False):
     """
     Inject a PSF into an image at a location given by center. Optional: scale PSF
     Input:
@@ -255,13 +296,40 @@ def inject_psf(img, psf, center, scaling=None):
     injection_corner = center - psf_rad
     injection_pix = np.ogrid[injection_corner[0]:injection_corner[0]+psf.shape[-2],
                              injection_corner[1]:injection_corner[1]+psf.shape[-1]]
-    
+
+    # normalized full-image PSF
+    injection_psf = np.zeros(img.shape)
+    injection_psf[injection_pix[0], injection_pix[1]] += psf/np.nansum(psf)
+
     # add the scaled psfs
     injection_img = np.zeros(img_tiled.shape)
     injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scaling).T
-
+    full_injection = np.squeeze(injection_img + img_tiled)
     # get rid of extra dimensions before returning
-    return np.squeeze(injection_img + img_tiled)
+    if return_psf is True:
+        return full_injection, injection_psf
+    return full_injection
+
+
+def FM_flux(kl_sub_img, psf, kl_basis):
+    """
+    Use forward modeling to determine the flux from a point source whose location is given by psf
+    Derivation can be found in Pueyo 2016, Appendix C
+    Input:
+        kl_sub_img: (Nimg x)Npix array of klip-subtracted images with a point source inside
+        psf: Npix array of the normalized PSF at a particular location
+        kl_basis: KL basis vectors up to as many as you want to include (must be same as number
+            used to generate kl_sub_img)
+    returns:
+        fm_flux: Nimg x len(kl_basis) array of fluxes for each klip-subtracted image provided
+    """
+    # first take care of just one image
+    # make sure the psf is normalized
+    psf = psf/np.nansum(psf)
+    numerator = np.dot(kl_sub_img, psf)
+    denominator = np.dot(psf,psf) - np.nansum(np.dot(kl_basis, psf)**2)
+    fm_flux = numerator/denominator
+    return fm_flux
 
 
 ##########
@@ -438,22 +506,3 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         #return sub_img_rows_selected.transpose()
     return return_objs
 
-def FM_flux(kl_sub_img, psf, kl_basis):
-    """
-    Use forward modeling to determine the flux from a point source whose location is given by psf
-    Derivation can be found in Pueyo 2016, Appendix C
-    Input:
-        kl_sub_img: (Nimg x)Npix array of klip-subtracted images with a point source inside
-        psf: Npix array of the normalized PSF at a particular location
-        kl_basis: KL basis vectors up to as many as you want to include (must be same as number
-            used to generate kl_sub_img)
-    returns:
-        fm_flux: Nimg x len(kl_basis) array of fluxes for each klip-subtracted image provided
-    """
-    # first take care of just one image
-    # make sure the psf is normalized
-    psf = psf/np.nansum(psf)
-    numerator = np.dot(kl_sub_img, psf)
-    denominator = np.dot(psf,psf) - np.nansum(np.dot(kl_basis, psf)**2)
-    fm_flux = numerator/denominator
-    return fm_flux
