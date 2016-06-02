@@ -327,6 +327,7 @@ def make_image_from_region(region, indices, shape):
     img = np.ravel(np.zeros(shape))
     # handle the case of region being a 2D array by extending the img axes
     if region.ndim == 2:
+
         img = np.tile(img, (region.shape[0], 1))
     else:
         img = img[None,:]
