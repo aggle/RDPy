@@ -222,9 +222,12 @@ def sort_squared_distance(targ, references):
     # if dist == 0 for an image, it's clearly the same image and should be excluded
     # use the fact that distance is positive definite so the same image will be closest
     sorted_dist = np.sort(dist)
-    start_index = 0 
-    if np.where(sorted_dist==0): # target is in references
-        start_index = np.max(np.squeeze(np.where(sorted_dist==0)))+1
+    start_index = 0
+    try:
+        if np.where(sorted_dist==0): # target is in references
+            start_index = np.max(np.squeeze(np.where(sorted_dist==0)))+1
+    except: # target is not in references, do nothing
+        pass
     sorted_image_indices = np.argsort(dist)[start_index:]
     return sorted_image_indices
 
