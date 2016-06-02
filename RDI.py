@@ -285,6 +285,7 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False):
              if scaling is None, don't scale psf
     Returns:
        injected_img: 2-D image or 3D cube with the injected PSF(s)
+       injection_psf: (if return_psf=True) 2-D normalized PSF full image
     """
     if scaling is None:
         scaling = 1
@@ -314,12 +315,39 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False):
     return full_injection
 
 
+def make_image_from_region(region, indices, shape):
+    """
+    put the flattened region back into an image
+    Input:
+        region: Nimg x Npix array
+        indices: Npix array of flattened pixel coordinates 
+                 corresponding to the region
+        shape: image shape
+    """
+    img = np.ravel(np.zeros(shape))
+    # handle the case of region being a 2D array by extending the img axes
+    if region.ndim == 2:
+        img = img.tile(img, (region.shape[0], 1))
+    else:
+        img = img[None,:]
+    # fill in the image
+    img[:,indices] = region
+    # reshape and get rid of extra axes, if any
+    img = np.squeeze(img.reshape(img.shape[0], shape))
+    return img
+
+
+####################
+# Forward modeling #
+####################
+
 def FM_flux(kl_sub_img, psf, kl_basis):
     """
     Use forward modeling to determine the flux from a point source whose location is given by psf
     Derivation can be found in Pueyo 2016, Appendix C
+    len(kl_basis) must match the number of KL modes that went into generating kl_sub_img
     Input:
-        kl_sub_img: (Nimg x)Npix array of klip-subtracted images with a point source inside
+        kl_sub_img: Npix array of a klip-subtracted image with a point source inside
         psf: Npix array of the normalized PSF at a particular location
         kl_basis: KL basis vectors up to as many as you want to include (must be same as number
             used to generate kl_sub_img)
@@ -334,6 +362,20 @@ def FM_flux(kl_sub_img, psf, kl_basis):
     fm_flux = numerator/denominator
     return fm_flux
 
+def FM_noise(bgnd, psf, kl_basis):
+    """
+    Use forward modeling to determine the noise in the image
+    Input:
+        bgnd: Npix array pre-subtraction, with no point source
+        psf: Npix array of the model PSF
+        kl_basis: N_kl x Npix array of the KL basis vectors
+    Returns:
+        noise
+    """
+    psf = psf/np.nansum(psf)
+    numerator = np.dot(bgnd, psf) - np.nansum(np.dot(kl_basis, bgnd)*np.dot(kl_basis,psf))
+    denominator = np.linalg.norm(psf)**2 - np.nansum(np.dot(kl_basis, psf)**2)
+    return numerator/denominator
 
 ##########
 # My own klip copy that returns both the KL basis and the fake injections
