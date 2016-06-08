@@ -320,7 +320,8 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=F
     injection_img = np.zeros(img_tiled.shape)
     injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scaling).T
     # get rid of extra dimensions before returning
-    full_injection = np.squeeze(injection_img + img_tiled)
+    #full_injection = np.squeeze(injection_img + img_tiled)
+    full_injection = injection_img + img_tiled
     if subtract_mean is True:
         full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
         injection_psf = injection_psf - np.nanmean(injection_psf)
@@ -354,9 +355,27 @@ def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
     
     injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
     if subtract_mean == True:
-        injected_flat_img = (full_injection.T - np.nanmean(full_injection, axis=-1)).T
+        injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
     return injected_flat_img
+
+def generate_mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1, fuck_off=True):
+    """
+    flat_img: 2-D image to inject into
+    flat_psf: 2-D psf 
+    """
+    scaling = np.array(scaling)
+    # get the right dimensions
+    flat_img_tiled = np.tile(flat_img, (np.size(scaling),1))
+    flat_psf_tiled = np.tile(flat_psf, (np.size(scaling),1))
+
+    # assume the PSF is already properly aligned
+    scaled_psf_tiled = (flat_psf_tiled.T*scaling).T
     
+    injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
+    injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
+    return injected_flat_img
+
+
 def make_image_from_region(region, indices, shape):
     """
     put the flattened region back into an image
