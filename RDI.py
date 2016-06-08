@@ -50,6 +50,7 @@ class ReferenceCube(object):
         self.Nref = np.shape(newcube)[0]
         self.imshape = np.shape(newcube)[1:]
         self.flat_cube = newcube.reshape(self.Nref, reduce(lambda x,y: x*y, self.imshape)) # may already be flat?
+        self.reference_indices = list(np.ogrid[:self.cube.shape[0]])
     @property
     def Nref(self):
         return self._Nref
@@ -62,7 +63,13 @@ class ReferenceCube(object):
     @imshape.setter
     def imshape(self, newshape):
         self._imshape = newshape
-        
+    @property
+    def reference_indices(self):
+        return self._reference_indices[:]
+    @reference_indices.setter
+    def reference_indices(self, newval):
+        self._reference_indices = list(newval)
+    
     # region mask
     @property
     def region(self):
@@ -273,16 +280,20 @@ def make_circular_mask(center, rad, shape):
     return mask
 
 
-def inject_psf(img, psf, center, scaling=None, return_psf=False):
+def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=False, return_flat=False):
     """
     Inject a PSF into an image at a location given by center. Optional: scale PSF
     Input:
         img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
         psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
              must have same 1st dimension as img 
+        center: center of the injection in the image
         scaling: multiply the PSF by this number. If this is an array,
              img and psf will be tiled to match its length
              if scaling is None, don't scale psf
+        return_psf: (False) return an image with the PSF and zeros elsewhere
+        subtract_mean: (False) mean-subtract before returning
+        return_flat: (False) flatten the array along the pixels axis before returning
     Returns:
        injected_img: 2-D image or 3D cube with the injected PSF(s)
        injection_psf: (if return_psf=True) 2-D normalized PSF full image
@@ -301,20 +312,51 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False):
     injection_pix = np.ogrid[injection_corner[0]:injection_corner[0]+psf.shape[-2],
                              injection_corner[1]:injection_corner[1]+psf.shape[-1]]
 
-    # normalized full-image PSF
+    # normalized full-image PSF in case you want it later
     injection_psf = np.zeros(img.shape)
     injection_psf[injection_pix[0], injection_pix[1]] += psf/np.nansum(psf)
 
     # add the scaled psfs
     injection_img = np.zeros(img_tiled.shape)
     injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scaling).T
-    full_injection = np.squeeze(injection_img + img_tiled)
     # get rid of extra dimensions before returning
+    full_injection = np.squeeze(injection_img + img_tiled)
+    if subtract_mean is True:
+        full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
+        injection_psf = injection_psf - np.nanmean(injection_psf)
+    if return_flat is True:
+        shape = full_injection.shape
+        if full_injection.ndim == 2:
+            full_injection = np.ravel(full_injection)
+        else:
+            full_injection = np.reshape(full_injection, (shape[0],reduce(lambda x,y: x*y, shape[1:])))
     if return_psf is True:
         return full_injection, injection_psf
     return full_injection
 
+def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
+    """
+    Inject a flattened psf into a flattened region with some scaling.
+    Input:
+        flat_img: 1-d array of the region of interest
+        flat_psf: 1-d array of the psf in the region at the correct location
+        scaling: (1) multiply the PSF by this number. If this is an array, 
+                 img and psf will be tiled to match its length.
+        subtract_mean: (False) mean-subtract images before returning
+    """
+    scaling = np.array(scaling)
+    # get the right dimensions
+    flat_img_tiled = np.tile(flat_img, (np.size(scaling),1))
+    flat_psf_tiled = np.tile(flat_psf, (np.size(scaling),1))
 
+    # assume the PSF is already properly aligned
+    scaled_psf_tiled = (flat_psf_tiled.T*scaling).T
+    
+    injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
+    if subtract_mean == True:
+        injected_flat_img = (full_injection.T - np.nanmean(full_injection, axis=-1)).T
+    return injected_flat_img
+    
 def make_image_from_region(region, indices, shape):
     """
     put the flattened region back into an image
