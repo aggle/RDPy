@@ -151,6 +151,7 @@ class ReferenceCube(object):
     def calc_covariance_matrix(self, references):
         """
         get the covariance matrix of the cube in the selected region
+        Note: suspect normalization is wrong
         Input:
             references: Nref x Npix array of flattened reference images
         Returns:
@@ -358,7 +359,7 @@ def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
         injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
     return injected_flat_img
 
-def generate_mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1, fuck_off=True):
+def generate_mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1):
     """
     flat_img: 2-D image to inject into
     flat_psf: 2-D psf 
@@ -380,22 +381,25 @@ def make_image_from_region(region, indices, shape):
     """
     put the flattened region back into an image
     Input:
-        region: Nimg x Npix array
+        region: [Nx,[Ny...]] x Npix array (any shape as long as the last dim is the pixels)
         indices: Npix array of flattened pixel coordinates 
                  corresponding to the region
         shape: image shape
     """
+    oldshape = np.copy(region.shape)
     img = np.ravel(np.zeros(shape))
     # handle the case of region being a 2D array by extending the img axes
-    if region.ndim == 2:
-
+    if region.ndim > 1:
+        # assume last dimension is the pixel
+        region = np.reshape(region, (reduce(lambda x,y: x*y, oldshape[:-1]), oldshape[-1]))
         img = np.tile(img, (region.shape[0], 1))
     else:
         img = img[None,:]
     # fill in the image
     img[:,indices] = region
     # reshape and get rid of extra axes, if any
-    img = np.squeeze(img.reshape([img.shape[0]]+list(shape)))
+    img = np.squeeze(img.reshape(list(oldshape[:-1])+list(shape)))
+                            
     return img
 
 
