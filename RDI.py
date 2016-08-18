@@ -700,3 +700,66 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         #return sub_img_rows_selected.transpose()
     return return_objs
 
+
+
+#######################################
+# Image to Sky coordinate conversions #
+#######################################
+def image_2_seppa(coord, orientation=0, center=(40,40), pix_scale = 75):
+    """
+    convert from image coordinates to sep and pa
+    coord: (row, col) coord in image
+    orientation: clockwise angle between y in image and north
+    center: image center
+    pix_scale: 75 mas/pix for nicmos
+    """
+    coord = np.array(coord)
+    center = np.array(center)
+    centered_coord = coord-center
+    sep = np.linalg.norm(centered_coord)*pix_scale
+    pa = np.arctan(centered_coord[0]/centered_coord[1]) * 180/np.pi
+    pa -= orientation
+    return (sep, pa)
+
+def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
+                  return_raveled=False, shape=None):
+    """
+    convert from separation and position angle to image coordinates
+    Arguments:
+      sep: separation in mas
+      pa: on-sky position angle in degrees
+      orientation: clockwise angle between y in image and north
+      center: ([40,40]) row, col image center
+      pix_scale: 75 mas/pix for nicmos
+      return_raveled: [True] instead of row,col coord, return the coordinate for a linearized array. 
+        If True, you must also provide the image shape
+    shape: (nrow, ncol) tuple of the image shape
+    Returns:
+        Nearest integer of the coordinate, either 1-D or 2-D depending on value of return_raveled
+    """
+    # convert all angles from degrees to radians
+    center = np.array(center)
+    pa = pa*np.pi/180
+    orientation = orientation*np.pi/180
+    tot_ang = pa+orientation
+    row = sep*np.cos(tot_ang)/pix_scale + center[0]
+    col = sep*np.sin(tot_ang)/pix_scale + center[1]
+    row, col = (np.int(np.round(row)), np.int(np.round(col)))
+    if return_raveled is True:
+        ind = np.ravel_multi_index((row, col), shape, mode='clip')
+        return ind
+    return row, col
+
+
+def klip_subtract_with_basis(img_flat, kl_basis):
+    """
+    If you already have the KL basis, do the klip subtraction
+    Arguments:
+      img_flat: Npix 1-D flattened image 
+      kl_basis: Nklip x Npix array of KL basis vectors
+    Return:
+      subtracted_img: array with same shape as input image, after KL PSF subtraction
+    """
+    img_flat_mean_sub = img_flat - np.nanmean(img_flat)
+    return img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k for k in kl_basis], axis=0)
+    
