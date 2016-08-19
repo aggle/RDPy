@@ -155,7 +155,26 @@ class ReferenceCube(object):
             new_cube_order = sort_squared_distance(newval, self.cube)
             self.cube = self.cube[new_cube_order]
                  
+
+    # Forward modeling and Matched Filter
+    @property
+    def kl_basis(self):
+        return self._kl_basis
+    @kl_basis.setter
+    def kl_basis(self, newval):
+        self.kl_basis = newval
+
     
+    @property
+    def matched_filter(self):
+        # Npix x (Nx x Ny) datacube of matched filters for each position
+        return self._matched_filter
+    @matched_filter.setter
+    def matched_filter(self, newval):
+        self.matched_filter = newval
+
+    
+        
     # Misc
     def set_mask(self, mask):
         """
@@ -222,6 +241,8 @@ class ReferenceCube(object):
         if covar_matrix is None:
             covar_matrix = self.covar_matrix
         return covar_matrix[np.meshgrid(indices, indices)].copy()
+
+
 
 ############################
 ## PSF Injection ###########
@@ -338,14 +359,12 @@ def inject_psf(img, psf, center):
     and then cutting down to the original image
     """
     center = np.array(center)
-    psf_rad = np.int(np.floor(psf.shape[0]/2.)) # assume psf is symmetric
-    # pad the image by psf_rad+1
-    padded_img = np.pad(img, psf_rad+1, mode='constant', constant_values = 0)
-    center += psf_rad
-#    return padded_img
-    injected_psf = inject_psfs(padded_img, psf, center)
-    return injected_psf[psf_rad+1:-(psf_rad+1),psf_rad+1:-(psf_rad+1)]
+    img_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0],psf.shape[1], img.shape)
 
+    injected_img = img.copy()
+    injected_img[img_pix[0], img_pix[1]] += psf[psf_pix[0], psf_pix[1]]
+
+    return injected_img
     
 def inject_psfs(img, psf, center, scale_flux=None, return_psf=False, subtract_mean=False, return_flat=False):
     """
@@ -375,21 +394,23 @@ def inject_psfs(img, psf, center, scale_flux=None, return_psf=False, subtract_me
 
     # get the injection pixels
     psf_rad =  np.array([np.int(np.floor(i/2.)) for i in psf.shape[-2:]])
-    injection_corner = center - psf_rad
+#    injection_corner = center - psf_rad
     # how much of the PSF will fit?
-    injection_lb = np.max([(0,0), center - psf_rad], axis=0)
-    injection_ub = np.min([center + psf_rad, img.shape], axis=0)
-    injection_lb = np.array([np.int(i) for i in injection_lb])
-    injection_ub = np.array([np.int(i) for i in injection_ub])
-    injection_dim = injection_ub - injection_lb
-    injection_pix = np.ogrid[injection_lb[0]:injection_ub[0],
-                             injection_lb[1]:injection_ub[1]]
+#    injection_lb = np.max([(0,0), center - psf_rad], axis=0)
+#    injection_ub = np.min([center + psf_rad, img.shape], axis=0)
+#    injection_lb = np.array([np.int(i) for i in injection_lb])
+#    injection_ub = np.array([np.int(i) for i in injection_ub])
+#    injection_dim = injection_ub - injection_lb
+#    injection_pix = np.ogrid[injection_lb[0]:injection_ub[0],
+#                             injection_lb[1]:injection_ub[1]]
     #injection_pix = np.ogrid[injection_corner[0]:injection_corner[0]+psf.shape[-2],
     #                         injection_corner[1]:injection_corner[1]+psf.shape[-1]]
-
+    injection_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
+    
     # normalized full-image PSF in case you want it later
     injection_psf = np.zeros(img.shape)
-    injection_psf[injection_pix[0], injection_pix[1]] += psf/np.nansum(psf)
+    cut_psf = psf[psf_pix[0],psf_pix[1]]
+    injection_psf[injection_pix[0], injection_pix[1]] += cut_psf/np.nansum(psf)
 
     # add the scaled psfs
     injection_img = np.zeros(img_tiled.shape)
@@ -526,182 +547,6 @@ def FM_noise(bgnd, psf, kl_basis):
     denominator = np.linalg.norm(psf)**2 - np.nansum(np.dot(kl_basis, psf)**2)
     return numerator/denominator
 
-##########
-# My own klip copy that returns both the KL basis and the fake injections
-##########
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False, return_basis_and_eig=False):
-    """
-    Helper function for KLIP that does the linear algebra
-    
-    Args:
-        sci: array of length p containing the science data
-        ref_psfs: N x p array of the N reference PSFs that 
-                  characterizes the PSF of the p pixels
-        numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
-        covar_psfs: covariance matrix of reference psfs passed in so you don't have to calculate it here
-        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped. Can be a cube.
-        PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
-                              the klipping. ie from which the modes are calculated.
-        return_basis: If true, return KL basis vectors (used when onesegment==True)
-        return_basis_and_eig: If true, return KL basis vectors as well as the eigenvalues and eigenvectors of the
-                                covariance matrix. Used for KLIP Forward Modelling of Laurent Pueyo.
-
-    Returns:
-        sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
-                               cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
-        KL_basis: array of shape (max(numbasis),p). Only if return_basis or return_basis_and_eig is True.
-        evals: Eigenvalues of the covariance matrix. The covariance matrix is assumed NOT to be normalized by (p-1).
-                Only if return_basis_and_eig is True.
-        evecs: Eigenvectors of the covariance matrix. The covariance matrix is assumed NOT to be normalized by (p-1).
-                Only if return_basis_and_eig is True.
-    """
-    return_objs = {} # container to collect  objects to return
-    
-    # for the science image, subtract the mean and mask bad pixels
-    sci_mean_sub = sci - np.nanmean(sci)
-    # sci_nanpix = np.where(np.isnan(sci_mean_sub))
-    # sci_mean_sub[sci_nanpix] = 0
-
-    # do the same for the reference PSFs
-    # playing some tricks to vectorize the subtraction
-    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
-    ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
-
-    # Replace the nans of the PSFs (~fake planet) area by zeros.
-    # We don't want to subtract the mean here. Well at least JB thinks so...
-    if PSFsarea_forklipping is not None:
-        PSFsarea_forklipping[np.where(np.isnan(PSFsarea_forklipping))] = 0
-
-    # calculate the covariance matrix for the reference PSFs
-    # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
-    # we have to correct for that a few lines down when consturcting the KL
-    # vectors since that's not part of the equation in the KLIP paper
-    if covar_psfs is None:
-        covar_psfs = np.cov(ref_psfs_mean_sub)
-
-    # maximum number of KL modes
-    tot_basis = covar_psfs.shape[0]
-
-    # only pick numbasis requested that are valid. We can't compute more KL basis than there are reference PSFs
-    # do numbasis - 1 for ease of indexing since index 0 is using 1 KL basis vector
-    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)  # clip values, for output consistency we'll keep duplicates
-    max_basis = np.max(numbasis) + 1  # maximum number of eigenvectors/KL basis we actually need to use/calculate
-
-    # calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
-    evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
-
-    # scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
-    # we're going to recopy them to hopefully improve caching when doing matrix multiplication
-    evals = np.copy(evals[::-1])
-    evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
-
-    # check if there are negative eignevalues as they will cause NaNs later that we have to remove
-    # the eigenvalues are ordered smallest to largest
-    check_nans = np.any(evals <= 0)
-    if check_nans: # keep an index of the negative eignevalues for future reference if there are any
-        neg_evals = np.squeeze(np.where(evals <= 0))
-
-    # calculate the KL basis vectors
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
-    # JB question: Why is there this [None, :]? (It adds an empty first dimension)
-    kl_basis = kl_basis * (1. / np.sqrt(evals * (np.size(sci) - 1)))[None, :]  #multiply a value for each row
-
-    # sort to KL basis in descending order (largest first)
-    # kl_basis = kl_basis[:,eig_args_all]
-
-    # duplicate science image by the max_basis to do simultaneous calculation for different k_KLIP
-    sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis, 1))
-    sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) # this is the output image which has less rows
-
-    # Do the same for the PFSs (fake planet)
-    if PSFarea_tobeklipped is not None:
-        # JA edits
-        # old
-        #PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
-        #PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
-        # this version allows a cube of fake planets to be passed
-        # by rolling the image index axis to the front (0), proper array broadcasting is maintained for the linear algebra
-        # unused axes will be removed before returning, so the original shape is maintained
-        # these changes should be transparent to the user
-        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1, 1))
-        PSFarea_tobeklipped_rows = np.rollaxis(PSFarea_tobeklipped_rows, 1, 0)
-        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1, 1)) 
-        PSFarea_tobeklipped_rows_selected = np.rollaxis(PSFarea_tobeklipped_rows_selected, 1, 0)
-
-
-    # bad pixel mask
-    # do it first for the image we're just doing computations on but don't care about the output
-    sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
-    sci_mean_sub_rows[sci_nanpix] = 0
-    # now do it for the output image
-    sci_nanpix = np.where(np.isnan(sci_rows_selected))
-    sci_rows_selected[sci_nanpix] = 0
-
-    # Do the same for the PFSs (fake planet)
-    if PSFarea_tobeklipped is not None:
-        PSFarea_tobeklipped_rows[np.where(np.isnan(PSFarea_tobeklipped_rows))] = 0
-        solePSFs_nanpix = np.where(np.isnan(PSFarea_tobeklipped_rows_selected))
-        PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = 0
-
-    # do the KLIP equation, but now all the different k_KLIP simultaneously
-    # calculate the inner product of science image with each of the different kl_basis vectors
-    # TODO: can we optimize this so it doesn't have to multiply all the rows because in the next lines we only select some of them
-    inner_products = np.dot(sci_mean_sub_rows, np.require(kl_basis, requirements=['F']))
-    # select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal matrix
-    lower_tri = np.tril(np.ones([max_basis, max_basis]))
-    inner_products = inner_products * lower_tri
-    # if there are NaNs due to negative eigenvalues, make sure they don't mess up the matrix multiplicatoin
-    # by setting the appropriate values to zero
-    if check_nans:
-        needs_to_be_zeroed = np.where(lower_tri == 0)
-        inner_products[needs_to_be_zeroed] = 0
-        # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
-        kl_basis[:, neg_evals] = 0
-        klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
-        # for KLIP PSFs that use so many KL modes that they become nans, we have to put nan's back in those
-        badbasis = np.where(numbasis >= np.min(neg_evals)) #use basis with negative eignevalues
-        klip_psf[badbasis[0], :] = np.nan
-    else:
-        # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
-        klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
-
-    # make subtracted image for each number of klip basis
-    sub_img_rows_selected = sci_rows_selected - klip_psf
-
-    # restore NaNs
-    sub_img_rows_selected[sci_nanpix] = np.nan
-    # add it to the returned objects dictionary
-    # need to flip them so the output is shaped (p,b) for sci img
-    return_objs['klipped_sci'] = sub_img_rows_selected.transpose()
-
-    # Apply klip similarly but this time on the sole PSFs (The fake planet only)
-    # Note that we use the same KL basis as before. Just the inner product changes.
-    if PSFarea_tobeklipped is not None:
-        inner_products_solePSFs = np.dot(PSFarea_tobeklipped_rows, np.require(kl_basis, requirements=['F']))
-        inner_products_solePSFs = inner_products_solePSFs * np.tril(np.ones([max_basis, max_basis]))
-        klip_solePSFs = np.dot(inner_products_solePSFs[:,numbasis,:], kl_basis.T)
-        PSFarea_tobeklipped_rows_selected = PSFarea_tobeklipped_rows_selected - klip_solePSFs
-        PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = np.nan
-
-        # need to flip them so the output is shaped (p,b) for sci img
-        # and (nfake,p,b) for fakes (or just (p,b) if only one fake PSF was passed)
-        return_objs['klipped_fakePSFs'] = np.squeeze(np.rollaxis(PSFarea_tobeklipped_rows_selected.transpose(),-1,0))
-        #return sub_img_rows_selected.transpose(), np.squeeze(np.rollaxis(PSFarea_tobeklipped_rows_selected.transpose(),-1,0))
-
-    if return_basis is True:
-        return_objs['kl_basis'] = kl_basis.transpose()
-        #return sub_img_rows_selected.transpose(), kl_basis.transpose()
-    elif return_basis_and_eig is True:
-        return_objs['kl_basis'] = kl_basis.transpose()
-        return_objs['eig'] = (evals*(np.size(sci-1)),evecs)
-        #return sub_img_rows_selected.transpose(), kl_basis.transpose(),evals*(np.size(sci)-1), evecs
-    else:
-        pass
-        #return sub_img_rows_selected.transpose()
-    return return_objs
-
-
-
 #######################################
 # Image to Sky coordinate conversions #
 #######################################
@@ -763,3 +608,109 @@ def klip_subtract_with_basis(img_flat, kl_basis):
     img_flat_mean_sub = img_flat - np.nanmean(img_flat)
     return img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k for k in kl_basis], axis=0)
     
+
+def get_stamp_coordinates(center, drow, dcol, imshape):
+    """
+    get pixel coordinates for a stamp with width dcol, height drow, and center `center` embedded
+    in an image of dimensions imshape
+    Arguments:
+        center: (row, col) center of the stamp
+        drow: height of stamp
+        dcol: width of stamp
+        imshape: total size of image the stamp is a part of
+    Returns:
+        img_coords: the stamp indices for the full image array (img[img_coords_for_stamp])
+        stamp_coords: the stamp indices for selecting the part of the stamp that goes in the image (stamp[stamp_coords])
+    """
+    colrad = np.int(np.floor(dcol))/2
+    rowrad = np.int(np.floor(drow))/2
+    rads = np.array([rowrad, colrad], dtype=np.int)
+    center = np.array([center[0],center[1]],dtype=np.int)
+    img = np.zeros(imshape)
+    stamp = np.ones((drow,dcol))
+    full_stamp_coord = np.indices(stamp.shape) + center[:,None,None]  - rads[:,None,None]
+    # check for out-of-bounds values
+    # boundaries
+    row_lb,col_lb = (0, 0)
+    row_hb,col_hb = imshape
+    
+    rowcheck_lo, colcheck_lo = (center - rads)
+    rowcheck_hi, colcheck_hi = ((imshape-center) - rads)    
+
+    row_start, col_start = 0,0
+    row_end, col_end = stamp.shape
+    
+    if rowcheck_lo < 0:
+        row_start = -1*rowcheck_lo
+    if colcheck_lo < 0:
+        col_start = -1*colcheck_lo
+    if rowcheck_hi < 0:
+        row_end = rowcheck_hi
+    if colcheck_hi < 0:
+        col_end = colcheck_hi
+
+    # pull out the selections
+    img_coords = full_stamp_coord[:,row_start:row_end,col_start:col_end]    
+    stamp_coords = np.indices(stamp.shape)[:,row_start:row_end,col_start:col_end]
+    return (img_coords, stamp_coords)
+
+def fmmf_throughput_correction(psfs, kl_basis):
+    """
+    Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
+    Arguments:
+        psfs: the flattened psf models
+        kl_basis: the KL basis for projection
+    """
+    mf_norm_1 = np.linalg.norm(psfs, axis=-1)**2
+    mf_norm_2 = np.nansum([np.dot(psfs, k)**2 for k in kl_basis], axis=0)
+    mf_norm = mf_norm_1 - mf_norm_2
+    return mf_norm
+
+def generate_matched_filter(psf, kl_basis, imshape, kl_pix_coordinates=None):
+    """
+    generate a matched filter with a model of the PSF. For now we assume that the KL basis covers the entire image
+    Arguments:
+        psf: square postage stamp of the PSF
+        kl_basis: karhunen-loeve basis for PC projection
+        imshape: Nrows x Ncols
+        kl_pix_coordinates: the pixel coordinates covered by the KL basis. if None, assumed to cover the whole image
+    Returns:
+        MF: cube of flattened matched filters. The first index tells you what pixel in the
+            image it corresponds to, through np.unravel_index(i, imshape)
+    """
+    mf_template_cube = np.zeros((imshape[0]*imshape[1],imshape[0],imshape[1]))
+    mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP on the PSFs
+    # inject the instrument PSFs - this cannot be done on a flattened cube
+    for i in range(len(mf_template_cube)):
+        center = np.unravel_index(i, imshape)
+        mf_template_cube[i] = inject_psf(np.zeros(imshape), psf, center)
+        mf_pickout_cube[i]  = inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
+    # flatten so that the first index is the target location index and the second index is the image pixel index
+    mf_flat_template = np.array([i.ravel() for i in mf_template_cube])
+    mf_flat_pickout =  np.array([i.ravel() for i in mf_pickout_cube])
+    # find the klip-modified PSFs
+    mf_flat_template_klipped = np.zeros_like(mf_flat_template)
+    for i in range(len(mf_flat_template_klipped)):
+        template = mf_flat_template[i]
+        mf_flat_template_klipped[i] = klip_subtract_with_basis(template, kl_basis)
+    # throughput normalization
+    mf_norm_flat = fmmf_throughput_correction(mf_flat_template, kl_basis)
+    MF = mf_flat_template_klipped/mf_norm_flat
+    return MF
+
+
+def apply_matched_filter_to_image(image, matched_filter):
+    """
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
+    Arguments:
+        image: 2-D image
+        matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
+    Returns:
+        mf_map: 2-D image where the matched filter has been applied
+    """
+    flat_image = image.ravel()
+    mf_map = np.zeros_like(flat_image)
+    for i in range(np.size(mf_map.shape)):
+        mf_map[i] = np.dot(matched_filter[i], flat_image)
+    return mf_map.reshape(image.shape)
+                           
