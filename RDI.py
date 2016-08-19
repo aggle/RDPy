@@ -204,7 +204,35 @@ class ReferenceCube(object):
             covar_matrix = self.covar_matrix
         return covar_matrix[np.meshgrid(indices, indices)].copy()
 
+############################
+## PSF Injection ###########
+############################
+class PSF_cutout(np.ndarray):
+    """
+    This object acts like an array except it ALSO stores the fractional flux contained in each slice.
+    See PSF_cutout.__new__()    
+    """
+    def __new__(cls, input_array, frac_flux=None):
+        obj = np.asarray(input_array).view(cls)
+        obj.frac_flux = frac_flux
+        return obj
     
+    def __array_finalize__(self, obj):
+        """ Default values go here """
+        if obj is None: return
+        self.frac_flux = getattr(obj, 'frac_flux', None)
+
+    def __array_wrap__(self, out_arr, context=None):
+        """For ufuncs"""
+        return np.ndarray.__array_wrap__(self, out_arr, context)    
+    
+    @property
+    def frac_flux(self):
+        return self._frac_flux
+    @frac_flux.setter
+    def frac_flux(self, newval):
+        self._frac_flux = newval
+        
 ############################
 ## Other useful functions ##
 ############################
@@ -280,8 +308,23 @@ def make_circular_mask(center, rad, shape):
     mask[np.where(rad2D <= rad)] = 1
     return mask
 
+def inject_psf(img, psf, center):
+    """
+    Inject a PSF into an image by adding it to the existing pixels
+    This handles psfs close to the edge of the image by first padding the image, injecting the psf,
+    and then cutting down to the original image
+    """
+    center = np.array(center)
+    psf_rad = np.int(np.floor(psf.shape[0]/2.)) # assume psf is symmetric
+    # pad the image by psf_rad+1
+    padded_img = np.pad(img, psf_rad+1, mode='constant', constant_values = 0)
+    center += psf_rad
+#    return padded_img
+    injected_psf = inject_psfs(padded_img, psf, center)
+    return injected_psf[psf_rad+1:-(psf_rad+1),psf_rad+1:-(psf_rad+1)]
 
-def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=False, return_flat=False):
+    
+def inject_psfs(img, psf, center, scale_flux=None, return_psf=False, subtract_mean=False, return_flat=False):
     """
     Inject a PSF into an image at a location given by center. Optional: scale PSF
     Input:
@@ -289,9 +332,9 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=F
         psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
              must have same 1st dimension as img 
         center: center of the injection in the image
-        scaling: multiply the PSF by this number. If this is an array,
+        scale_flux: multiply the PSF by this number. If this is an array,
              img and psf will be tiled to match its length
-             if scaling is None, don't scale psf
+             if scale_flux is None, don't scale psf
         return_psf: (False) return an image with the PSF and zeros elsewhere
         subtract_mean: (False) mean-subtract before returning
         return_flat: (False) flatten the array along the pixels axis before returning
@@ -299,19 +342,25 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=F
        injected_img: 2-D image or 3D cube with the injected PSF(s)
        injection_psf: (if return_psf=True) 2-D normalized PSF full image
     """
-    if scaling is None:
-        scaling = 1
-    scaling = np.array(scaling)
+    if scale_flux is None:
+        scale_flux = 1
+    scale_flux = np.array(scale_flux)
     
     # get the right dimensions
-    img_tiled = np.tile(img, (np.size(scaling),1,1))
-    psf_tiled = np.tile(psf, (np.size(scaling),1,1))
+    img_tiled = np.tile(img, (np.size(scale_flux),1,1))
+    psf_tiled = np.tile(psf, (np.size(scale_flux),1,1))
 
     # get the injection pixels
     psf_rad =  np.array([np.int(np.floor(i/2.)) for i in psf.shape[-2:]])
     injection_corner = center - psf_rad
-    injection_pix = np.ogrid[injection_corner[0]:injection_corner[0]+psf.shape[-2],
-                             injection_corner[1]:injection_corner[1]+psf.shape[-1]]
+    # how much of the PSF will fit?
+    injection_lb = np.max([(0,0), center - psf_rad], axis=0)
+    injection_ub = np.min([center + psf_rad, img.shape], axis=0)
+    injection_dim = injection_ub - injection_lb
+    injection_pix = np.ogrid[injection_lb[0]:injection_ub[0],
+                             injection_lb[1]:injection_ub[1]]
+    #injection_pix = np.ogrid[injection_corner[0]:injection_corner[0]+psf.shape[-2],
+    #                         injection_corner[1]:injection_corner[1]+psf.shape[-1]]
 
     # normalized full-image PSF in case you want it later
     injection_psf = np.zeros(img.shape)
@@ -319,7 +368,7 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=F
 
     # add the scaled psfs
     injection_img = np.zeros(img_tiled.shape)
-    injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scaling).T
+    injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scale_flux).T
     # get rid of extra dimensions before returning
     #full_injection = np.squeeze(injection_img + img_tiled)
     full_injection = injection_img + img_tiled
@@ -334,7 +383,7 @@ def inject_psf(img, psf, center, scaling=None, return_psf=False, subtract_mean=F
             full_injection = np.reshape(full_injection, (shape[0],reduce(lambda x,y: x*y, shape[1:])))
     if return_psf is True:
         return full_injection, injection_psf
-    return full_injection
+    return np.squeeze(full_injection)
 
 def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
     """
