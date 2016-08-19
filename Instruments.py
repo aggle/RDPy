@@ -26,6 +26,7 @@ class NICMOS(object):
         self.IWA = 400 * units.mas # citation needed
         self.IWApix = self.IWA/self.pix_scale
 
+    # PSF STUFF
     @property
     def center(self):
         """Central pixel coordinates in [row,col]"""
