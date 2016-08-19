@@ -162,7 +162,7 @@ class ReferenceCube(object):
         return self._kl_basis
     @kl_basis.setter
     def kl_basis(self, newval):
-        self.kl_basis = newval
+        self._kl_basis = newval
 
     
     @property
@@ -171,7 +171,7 @@ class ReferenceCube(object):
         return self._matched_filter
     @matched_filter.setter
     def matched_filter(self, newval):
-        self.matched_filter = newval
+        self._matched_filter = newval
 
     
         
@@ -710,7 +710,7 @@ def apply_matched_filter_to_image(image, matched_filter):
     """
     flat_image = image.ravel()
     mf_map = np.zeros_like(flat_image)
-    for i in range(np.size(mf_map.shape)):
+    for i in range(np.size(mf_map)):
         mf_map[i] = np.dot(matched_filter[i], flat_image)
     return mf_map.reshape(image.shape)
                            
