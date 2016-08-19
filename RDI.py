@@ -136,8 +136,27 @@ class ReferenceCube(object):
     @corr_matrix.setter
     def corr_matrix(self, newcm):
         return self._corr_matrix
-        
-        
+
+    # target image (optional)
+    @property
+    def target(self):
+        """
+        Target image (cube?) for RDI reduction.
+        """
+        return self._target
+    @target.setter
+    def target(self, newval, sort_refs=False):
+        """
+        If sort_refs is true, the reference cube gets sorted in increasing order
+        of distance from the target
+        """
+        self._target = newval
+        if sort_refs is True:
+            new_cube_order = sort_squared_distance(newval, self.cube)
+            self.cube = self.cube[new_cube_order]
+                 
+    
+    # Misc
     def set_mask(self, mask):
         """
         Sets a new mask
@@ -244,12 +263,16 @@ def sort_squared_distance(targ, references):
     Gives back the indices of this set of references, sorted by distance and taking care of the case
     where the target itself is in the set of references
     Input:
-    targ: Npix array
-    references: Nimg x Npix array
+    targ: Npix array (can also be 2-D image)
+    references: Nimg x Npix array (can also be 3-D cube)
     Returns:
     sorted indices of the reference images, closest first
     i.e. references[sorted_indices] gives you the images in order of distance
     """
+    targ = targ.ravel() # 1-d
+    references = references.reshape(references.shape[0],
+                                    reduce(lambda x,y: x*y, references.shape[1:]))
+                                    
     targ_norm = targ/np.nansum(targ)
     ref_norm = references/np.nansum(references, axis=-1)[:,None]
     ref_norm = ref_norm[None, :] # make sure dimensionality works out in all cases
@@ -356,6 +379,8 @@ def inject_psfs(img, psf, center, scale_flux=None, return_psf=False, subtract_me
     # how much of the PSF will fit?
     injection_lb = np.max([(0,0), center - psf_rad], axis=0)
     injection_ub = np.min([center + psf_rad, img.shape], axis=0)
+    injection_lb = np.array([np.int(i) for i in injection_lb])
+    injection_ub = np.array([np.int(i) for i in injection_ub])
     injection_dim = injection_ub - injection_lb
     injection_pix = np.ogrid[injection_lb[0]:injection_ub[0],
                              injection_lb[1]:injection_ub[1]]
@@ -455,6 +480,15 @@ def make_image_from_region(region, indices, shape):
 ####################
 # Forward modeling #
 ####################
+
+def FM_MF(kl_basis, psf, shape):
+    """
+    Generate a matched filter 
+    """
+    pass
+
+
+
 
 def FM_flux(kl_sub_img, psf, kl_basis):
     """
@@ -666,3 +700,66 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         #return sub_img_rows_selected.transpose()
     return return_objs
 
+
+
+#######################################
+# Image to Sky coordinate conversions #
+#######################################
+def image_2_seppa(coord, orientation=0, center=(40,40), pix_scale = 75):
+    """
+    convert from image coordinates to sep and pa
+    coord: (row, col) coord in image
+    orientation: clockwise angle between y in image and north
+    center: image center
+    pix_scale: 75 mas/pix for nicmos
+    """
+    coord = np.array(coord)
+    center = np.array(center)
+    centered_coord = coord-center
+    sep = np.linalg.norm(centered_coord)*pix_scale
+    pa = np.arctan(centered_coord[0]/centered_coord[1]) * 180/np.pi
+    pa -= orientation
+    return (sep, pa)
+
+def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
+                  return_raveled=False, shape=None):
+    """
+    convert from separation and position angle to image coordinates
+    Arguments:
+      sep: separation in mas
+      pa: on-sky position angle in degrees
+      orientation: clockwise angle between y in image and north
+      center: ([40,40]) row, col image center
+      pix_scale: 75 mas/pix for nicmos
+      return_raveled: [True] instead of row,col coord, return the coordinate for a linearized array. 
+        If True, you must also provide the image shape
+    shape: (nrow, ncol) tuple of the image shape
+    Returns:
+        Nearest integer of the coordinate, either 1-D or 2-D depending on value of return_raveled
+    """
+    # convert all angles from degrees to radians
+    center = np.array(center)
+    pa = pa*np.pi/180
+    orientation = orientation*np.pi/180
+    tot_ang = pa+orientation
+    row = sep*np.cos(tot_ang)/pix_scale + center[0]
+    col = sep*np.sin(tot_ang)/pix_scale + center[1]
+    row, col = (np.int(np.round(row)), np.int(np.round(col)))
+    if return_raveled is True:
+        ind = np.ravel_multi_index((row, col), shape, mode='clip')
+        return ind
+    return row, col
+
+
+def klip_subtract_with_basis(img_flat, kl_basis):
+    """
+    If you already have the KL basis, do the klip subtraction
+    Arguments:
+      img_flat: Npix 1-D flattened image 
+      kl_basis: Nklip x Npix array of KL basis vectors
+    Return:
+      subtracted_img: array with same shape as input image, after KL PSF subtraction
+    """
+    img_flat_mean_sub = img_flat - np.nanmean(img_flat)
+    return img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k for k in kl_basis], axis=0)
+    

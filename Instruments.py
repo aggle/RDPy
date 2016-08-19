@@ -18,11 +18,30 @@ class NICMOS(object):
         """
         Set the pixel scale, angular resolution, coronagraph properties
         """
-        self.Nx = 80 * units.pixel
-        self.Ny = 80 * units.pixel
+        self.Nx = 80 * units.pixel # redundant
+        self.Ny = 80 * units.pixel # redundant
+        self.imshape = np.array([80,80])
+        self.center = np.array([40,40])
         self.pix_scale = 75 * units.mas/units.pixel # citation needed
         self.IWA = 400 * units.mas # citation needed
+        self.IWApix = self.IWA/self.pix_scale
 
+    # PSF STUFF
+    @property
+    def center(self):
+        """Central pixel coordinates in [row,col]"""
+        return self._center
+    @center.setter
+    def center(self, newval):
+        self._center = newval
+    @property
+    def imshape(self):
+        return self._imshape
+    @imshape.setter
+    def imshape(self, newval):
+        self._imshape = newval
+        
+        
     # PSF STUFF
     @property
     def psf(self):
