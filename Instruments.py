@@ -25,8 +25,9 @@ class NICMOS(object):
         self.pix_scale = 75 * units.mas/units.pixel # citation needed
         self.IWA = 400 * units.mas # citation needed
         self.IWApix = self.IWA/self.pix_scale
+        self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
 
-    # PSF STUFF
+    # Image stuff
     @property
     def center(self):
         """Central pixel coordinates in [row,col]"""
@@ -40,6 +41,35 @@ class NICMOS(object):
     @imshape.setter
     def imshape(self, newval):
         self._imshape = newval
+
+    # IWA and mask
+    @property
+    def IWA(self):
+        return self._IWA
+    @IWA.setter
+    def IWA(self, newval):
+        self._IWA = newval
+        self.IWApix = self.IWA/self.pix_scale
+    @property
+    def IWApix(self):
+        return self._IWApix
+    @IWApix.setter
+    def IWApix(self, newval):
+        self._IWApix = newval
+        self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
+    @property
+    def IWAmask(self):
+        "1's outside, 0's inside"
+        return self._IWAmask
+    @IWAmask.setter
+    def IWAmask(self, newval):
+        self._IWAmask = newval
+    def make_IWA_mask(self, shape, center, iwa):
+        rad = np.linalg.norm(np.indices(shape) - center[:,None,None], axis=0)
+        outside = np.where(rad >= iwa)
+        mask = np.zeros(shape)
+        mask[outside] = 1
+        return mask
         
         
     # PSF STUFF

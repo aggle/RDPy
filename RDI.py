@@ -23,7 +23,7 @@ class ReferenceCube(object):
         - return a subset of the covariance matrix
         - calculate the distance of an image from the reference cube entries
     """
-    def __init__(self, cube, region_mask=None):
+    def __init__(self, cube, region_mask=None, target=None):
         """
         Initialize the reference cube class starting with a cube of stacked reference images
         Initialization entails:
@@ -34,6 +34,7 @@ class ReferenceCube(object):
         self.cube = cube
         self.Nref = cube.shape[0]
         self.imshape = cube.shape[1:]
+        self.target = target
         self.region = region_mask
 
     ###############################
@@ -49,7 +50,7 @@ class ReferenceCube(object):
         # new cube - reset all the class attributes
         self.Nref = np.shape(newcube)[0]
         self.imshape = np.shape(newcube)[1:]
-        self.flat_cube = newcube.reshape(self.Nref, reduce(lambda x,y: x*y, self.imshape)) # may already be flat?
+        self.flat_cube = newcube.reshape(self.Nref, reduce(lambda x,y: x*y, self.imshape)) 
         self.reference_indices = list(np.ogrid[:self.cube.shape[0]])
     @property
     def Nref(self):
@@ -69,7 +70,42 @@ class ReferenceCube(object):
     @reference_indices.setter
     def reference_indices(self, newval):
         self._reference_indices = list(newval)
-    
+
+
+    ##################
+    # target image
+    @property
+    def target(self):
+        """
+        Target image for RDI reduction, can be either 2-D or 1-D
+        """
+        return self._target
+    @target.setter
+    def target(self, newval):
+        """
+        If you give the RC a target, it will automatically sort the reference cube 
+        in increasing order of distance from the target
+        """
+        try:
+            self._target = newval.ravel()
+        except AttributeError:
+            self._target = None
+            return
+        new_cube_order = sort_squared_distance(self.target, self.cube)
+        self.cube = self.cube[new_cube_order]
+        self.reference_indices = new_cube_order
+    @property
+    def target_region(self):
+        """
+        The target image with the region mask applied
+        """
+        return self._target_region
+    @target_region.setter
+    def target_region(self, newval):
+        self._target_region = newval
+    ##################
+
+    ##################
     # region mask
     @property
     def region(self):
@@ -82,16 +118,20 @@ class ReferenceCube(object):
         else:
             self._region = newregion
         self.flat_region_ind = np.where(np.ravel(self._region)==1)[0]
+        
     @property
     def flat_region_ind(self):
         return self._flat_region_ind
     @flat_region_ind.setter
-    def flat_region_ind(self, newfri):
+    def flat_region_ind(self, newval):
         # as soon as you get region indices, pull out the region
-        self._flat_region_ind = newfri
+        self._flat_region_ind = newval
         self.flat_cube_region = self.flat_cube[:,self.flat_region_ind].copy()
+        if self.target is not None:
+            self.target_region = self.target[self.flat_region_ind].copy()
         # for some reason, whether you work on a copy or a view affects the answer
-        self.npix_region = np.size(newfri)
+        self.npix_region = np.size(newval)
+    
 
     @property
     def npix_region(self):
@@ -99,7 +139,9 @@ class ReferenceCube(object):
     @npix_region.setter
     def npix_region(self, new_npix_region):
         self._npix_region = new_npix_region
-        
+    ##################
+
+    ##################
     # cube flattening
     @property
     def flat_cube(self):
@@ -113,7 +155,6 @@ class ReferenceCube(object):
         except AttributeError:
             # mask doesn't exist
             self.region = None
-
     @property
     def flat_cube_region(self):
         return self._flat_cube_region
@@ -122,7 +163,8 @@ class ReferenceCube(object):
         # this is the only place you implicitly calc the covariance matrix
         self._flat_cube_region = newfcr
         self.covar_matrix = self.calc_covariance_matrix(self._flat_cube_region)
-
+    ##################
+        
     # derived attributes
     @property
     def covar_matrix(self):
@@ -137,24 +179,7 @@ class ReferenceCube(object):
     def corr_matrix(self, newcm):
         return self._corr_matrix
 
-    # target image (optional)
-    @property
-    def target(self):
-        """
-        Target image (cube?) for RDI reduction.
-        """
-        return self._target
-    @target.setter
-    def target(self, newval, sort_refs=False):
-        """
-        If sort_refs is true, the reference cube gets sorted in increasing order
-        of distance from the target
-        """
-        self._target = newval
-        if sort_refs is True:
-            new_cube_order = sort_squared_distance(newval, self.cube)
-            self.cube = self.cube[new_cube_order]
-                 
+                
 
     # Forward modeling and Matched Filter
     @property
@@ -181,6 +206,7 @@ class ReferenceCube(object):
         Sets a new mask
         Inputs:
             mask: a 2-D binary mask, 1=included, 0=excluded (region = im*mask)
+        Sets the region, which triggers selecting the appropriate reference cube and target regions
         """
         self.region = mask
 
@@ -476,13 +502,15 @@ def make_image_from_region(region, indices, shape):
     """
     put the flattened region back into an image
     Input:
-        region: [Nx,[Ny...]] x Npix array (any shape as long as the last dim is the pixels)
+        region: [Nimg,[Nx,[Ny...]]] x Npix array (any shape as long as the last dim is the pixels)
         indices: Npix array of flattened pixel coordinates 
                  corresponding to the region
         shape: image shape
+    Returns:
+        img: an image of dims `shape` with nan's in whatever indices are not explicitly set
     """
     oldshape = np.copy(region.shape)
-    img = np.ravel(np.zeros(shape))
+    img = np.ravel(np.zeros(shape))*np.nan
     # handle the case of region being a 2D array by extending the img axes
     if region.ndim > 1:
         # assume last dimension is the pixel
@@ -666,20 +694,25 @@ def fmmf_throughput_correction(psfs, kl_basis):
     mf_norm = mf_norm_1 - mf_norm_2
     return mf_norm
 
-def generate_matched_filter(psf, kl_basis, imshape, kl_pix_coordinates=None):
+def generate_matched_filter(psf, kl_basis, imshape, pix_indices=None):
     """
     generate a matched filter with a model of the PSF. For now we assume that the KL basis covers the entire image
     Arguments:
         psf: square postage stamp of the PSF
         kl_basis: karhunen-loeve basis for PC projection
         imshape: Nrows x Ncols
-        kl_pix_coordinates: the pixel coordinates covered by the KL basis. if None, assumed to cover the whole image
+        pix_indices: the raveled image pixel indices  covered by the KL basis. 
+            if None, assumed to cover the whole image
     Returns:
         MF: cube of flattened matched filters. The first index tells you what pixel in the
             image it corresponds to, through np.unravel_index(i, imshape)
     """
+    # if pix_indices is not set, assume the whole image is used
+    if pix_indices is None:
+        pix_indices = range(imshape[0]*imshape[1])
+    
     mf_template_cube = np.zeros((imshape[0]*imshape[1],imshape[0],imshape[1]))
-    mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP on the PSFs
+    mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
     # inject the instrument PSFs - this cannot be done on a flattened cube
     for i in range(len(mf_template_cube)):
         center = np.unravel_index(i, imshape)
@@ -690,11 +723,14 @@ def generate_matched_filter(psf, kl_basis, imshape, kl_pix_coordinates=None):
     mf_flat_pickout =  np.array([i.ravel() for i in mf_pickout_cube])
     # find the klip-modified PSFs
     mf_flat_template_klipped = np.zeros_like(mf_flat_template)
+    # when you apply KLIP, be careful only to use the selected region of the image
     for i in range(len(mf_flat_template_klipped)):
-        template = mf_flat_template[i]
-        mf_flat_template_klipped[i] = klip_subtract_with_basis(template, kl_basis)
+        template = mf_flat_template[i][pix_indices]
+        mf_flat_template_klipped[i][pix_indices] = klip_subtract_with_basis(template, kl_basis)
+    # leave only the region of interest in the images
+    mf_flat_template_klipped *= mf_flat_pickout
     # throughput normalization
-    mf_norm_flat = fmmf_throughput_correction(mf_flat_template, kl_basis)
+    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,pix_indices], kl_basis)
     MF = mf_flat_template_klipped/mf_norm_flat
     return MF
 
@@ -708,9 +744,15 @@ def apply_matched_filter_to_image(image, matched_filter):
     Returns:
         mf_map: 2-D image where the matched filter has been applied
     """
+    # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     flat_image = image.ravel()
+    nanpix_img = np.where(np.isnan(flat_image))
+    nanpix_mf = np.where(np.isnan(matched_filter))
+    flat_image[nanpix_img] = 0
+    matched_filter[nanpix_mf] = 0
     mf_map = np.zeros_like(flat_image)
     for i in range(np.size(mf_map)):
         mf_map[i] = np.dot(matched_filter[i], flat_image)
+    mf_map[nanpix_img] = np.nan
     return mf_map.reshape(image.shape)
                            
