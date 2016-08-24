@@ -694,22 +694,25 @@ def fmmf_throughput_correction(psfs, kl_basis):
     mf_norm = mf_norm_1 - mf_norm_2
     return mf_norm
 
-def generate_matched_filter(psf, kl_basis, imshape, pix_indices=None):
+def generate_matched_filter(psf, kl_basis, imshape, region_pix=None, mf_pix=None):
     """
     generate a matched filter with a model of the PSF. For now we assume that the KL basis covers the entire image
     Arguments:
         psf: square postage stamp of the PSF
         kl_basis: karhunen-loeve basis for PC projection
         imshape: Nrows x Ncols
-        pix_indices: the raveled image pixel indices  covered by the KL basis. 
+        region_pix: the raveled image pixel indices  covered by the KL basis. 
             if None, assumed to cover the whole image
+        mf_pix: [None] array of (row,col) pixel coordidates; if given, only generate MFs for these pixels
     Returns:
         MF: cube of flattened matched filters. The first index tells you what pixel in the
             image it corresponds to, through np.unravel_index(i, imshape)
+            if mf_pix is given, it will be 0 except for the slices corresponding to mf_pix
+            (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
     """
-    # if pix_indices is not set, assume the whole image is used
-    if pix_indices is None:
-        pix_indices = range(imshape[0]*imshape[1])
+    # if region_pix is not set, assume the whole image is used
+    if region_pix is None:
+        region_pix = range(imshape[0]*imshape[1])
     
     mf_template_cube = np.zeros((imshape[0]*imshape[1],imshape[0],imshape[1]))
     mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
@@ -724,23 +727,29 @@ def generate_matched_filter(psf, kl_basis, imshape, pix_indices=None):
     # find the klip-modified PSFs
     mf_flat_template_klipped = np.zeros_like(mf_flat_template)
     # when you apply KLIP, be careful only to use the selected region of the image
-    for i in range(len(mf_flat_template_klipped)):
-        template = mf_flat_template[i][pix_indices]
-        mf_flat_template_klipped[i][pix_indices] = klip_subtract_with_basis(template, kl_basis)
+
+    # pix is the flattened pixel indices; default is all of them
+    pix = range(len(imshape[0]*imshape[1]))
+    if mf_pix is not None:
+        pix = list(np.unravel_multi_index(mf_pix.T, imshape, mode='clip'))
+    for i in pix:
+        template = mf_flat_template[i][region_pix]
+        mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template, kl_basis)
     # leave only the region of interest in the images
     mf_flat_template_klipped *= mf_flat_pickout
     # throughput normalization
-    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,pix_indices], kl_basis)
+    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix], kl_basis)
     MF = mf_flat_template_klipped/mf_norm_flat
     return MF
 
 
-def apply_matched_filter_to_image(image, matched_filter):
+def apply_matched_filter_to_image(image, matched_filter, pix=None):
     """
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
         image: 2-D image
         matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
+        pix: [None] pixel coordinates in the image; specify if you want only these fluxes
     Returns:
         mf_map: 2-D image where the matched filter has been applied
     """
@@ -750,8 +759,11 @@ def apply_matched_filter_to_image(image, matched_filter):
     nanpix_mf = np.where(np.isnan(matched_filter))
     flat_image[nanpix_img] = 0
     matched_filter[nanpix_mf] = 0
-    mf_map = np.zeros_like(flat_image)
-    for i in range(np.size(mf_map)):
+    mf_map = np.zeros_like(flat_image)*np.nan
+    loop_ind = range(np.size(mf_map)):
+    if pix is not None:
+        loop_ind = list(np.unravel_multi_index(mf_pix.T, imshape, mode='clip'))
+    for i in loop_ind 
         mf_map[i] = np.dot(matched_filter[i], flat_image)
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(image.shape)
