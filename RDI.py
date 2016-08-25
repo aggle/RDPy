@@ -724,12 +724,20 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
         RCobj [None]: reference cube object. If given, overrides other args and they are not needed.
         kl_basis: karhunen-loeve basis for PC projection
         imshape: Nrows x Ncols
+<<<<<<< HEAD
         region_pix: the raveled image pixel indices covered by the KL basis. 
             if None, assumed to cover the whole image
         mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
+=======
+        region_pix: the raveled image pixel indices  covered by the KL basis. 
+            if None, assumed to cover the whole image
+        mf_pix: [None] array of (row,col) pixel coordidates; if given, only generate MFs for these pixels
+>>>>>>> 0721d27c7d85beb90a680f8cd38afb9d003d9133
     Returns:
         MF: cube of flattened matched filters. The first index tells you what pixel in the
             image it corresponds to, through np.unravel_index(i, imshape)
+            if mf_pix is given, it will be 0 except for the slices corresponding to mf_pix
+            (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
     """
     
     if RCobj is not None:
@@ -763,7 +771,12 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
     # find the klip-modified PSFs
     mf_flat_template_klipped = np.zeros_like(mf_flat_template)
     # when you apply KLIP, be careful only to use the selected region of the image
-    for i in range(len(mf_flat_template_klipped)):
+
+    # pix is the flattened pixel indices; default is all of them
+    pix = range(len(imshape[0]*imshape[1]))
+    if mf_pix is not None:
+        pix = list(np.unravel_multi_index(mf_pix.T, imshape, mode='clip'))
+    for i in pix:
         template = mf_flat_template[i][region_pix]
         mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template, kl_basis)
     # leave only the region of interest in the images
