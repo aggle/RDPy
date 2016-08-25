@@ -774,7 +774,7 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
     return MF
 
 
-def apply_matched_filter_to_image(image, matched_filter, locations=None):
+def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locations=None):
     """
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
@@ -784,6 +784,15 @@ def apply_matched_filter_to_image(image, matched_filter, locations=None):
     Returns:
         mf_map: 2-D image where the matched filter has been applied
     """
+    if RCobj is not None:
+        try:
+            matched_filter = RCobj.matched_filter
+            locations = RCobj.matched_filter_locations
+        except AttributeError as e:
+            print("Error: " e)
+            print("MF not applied, None returned")
+            return None
+
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     flat_image = image.ravel()
     nanpix_img = np.where(np.isnan(flat_image))
