@@ -724,15 +724,9 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
         RCobj [None]: reference cube object. If given, overrides other args and they are not needed.
         kl_basis: karhunen-loeve basis for PC projection
         imshape: Nrows x Ncols
-<<<<<<< HEAD
         region_pix: the raveled image pixel indices covered by the KL basis. 
             if None, assumed to cover the whole image
         mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
-=======
-        region_pix: the raveled image pixel indices  covered by the KL basis. 
-            if None, assumed to cover the whole image
-        mf_pix: [None] array of (row,col) pixel coordidates; if given, only generate MFs for these pixels
->>>>>>> 0721d27c7d85beb90a680f8cd38afb9d003d9133
     Returns:
         MF: cube of flattened matched filters. The first index tells you what pixel in the
             image it corresponds to, through np.unravel_index(i, imshape)
@@ -747,7 +741,7 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
             region_pix = RCobj.flat_region_ind
             mf_locations = RCobj.matched_filter_locations
         except AttributeError as e:
-            print("Error: " e)
+            print("Error: ", e)
             print("matched_filter set to None")
             return None
             
@@ -760,7 +754,9 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
     
     mf_template_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
     mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
+
     # inject the instrument PSFs - this cannot be done on a flattened cube
+    # only inject PSFs at the specified positions
     for i, p in enumerate(mf_locations):
         center = np.unravel_index(p, imshape) # injection location
         mf_template_cube[i] = inject_psf(np.zeros(imshape), psf, center)
@@ -772,11 +768,12 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
     mf_flat_template_klipped = np.zeros_like(mf_flat_template)
     # when you apply KLIP, be careful only to use the selected region of the image
 
-    # pix is the flattened pixel indices; default is all of them
-    pix = range(len(imshape[0]*imshape[1]))
-    if mf_pix is not None:
-        pix = list(np.unravel_multi_index(mf_pix.T, imshape, mode='clip'))
-    for i in pix:
+    # npix is the flattened pixel indices; default is all of them
+    npix = range(imshape[0]*imshape[1])
+    if mf_locations is not None:
+        npix = range(len(mf_locations))#np.array((np.unravel_index(mf_locations, imshape)).T
+        #pix = mf_locations
+    for i in npix:
         template = mf_flat_template[i][region_pix]
         mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template, kl_basis)
     # leave only the region of interest in the images
@@ -802,7 +799,7 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
             matched_filter = RCobj.matched_filter
             locations = RCobj.matched_filter_locations
         except AttributeError as e:
-            print("Error: " e)
+            print("Error: ", e)
             print("MF not applied, None returned")
             return None
 
