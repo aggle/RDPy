@@ -416,7 +416,7 @@ def inject_psf(img, psf, center):
     and then cutting down to the original image
     """
     center = np.array(center)
-    img_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0],psf.shape[1], img.shape)
+    img_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
 
     injected_img = img.copy()
     injected_img[img_pix[0], img_pix[1]] += psf[psf_pix[0], psf_pix[1]]
@@ -471,9 +471,8 @@ def inject_psfs(img, psf, center, scale_flux=None, return_psf=False, subtract_me
 
     # add the scaled psfs
     injection_img = np.zeros(img_tiled.shape)
-    injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scale_flux).T
-    # get rid of extra dimensions before returning
-    #full_injection = np.squeeze(injection_img + img_tiled)
+    #injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scale_flux).T
+    injection_img[:,injection_pix[0], injection_pix[1]] += psf_tiled*scale_flux[:,None,None]
     full_injection = injection_img + img_tiled
     if subtract_mean is True:
         full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
@@ -511,7 +510,7 @@ def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
         injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
     return injected_flat_img
 
-def generate_mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1):
+def mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1):
     """
     flat_img: 2-D image to inject into
     flat_psf: 2-D psf 
@@ -655,17 +654,22 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
     return row, col
 
 
-def klip_subtract_with_basis(img_flat, kl_basis):
+def klip_subtract_with_basis(img_flat, kl_basis, return_per_mode=False):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
       img_flat: Npix 1-D flattened image 
       kl_basis: Nklip x Npix array of KL basis vectors
+      return_per_mode [False]: if True, return one subtracted image per mode in kl_basis
     Return:
       subtracted_img: array with same shape as input image, after KL PSF subtraction
     """
     img_flat_mean_sub = img_flat - np.nanmean(img_flat)
-    return img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k for k in kl_basis], axis=0)
+    if return_per_mode is True:
+        sum_func = np.cumsum
+    else:
+        sum_func = np.nansum
+    return img_flat_mean_sub - sum_func([np.dot(img_flat_mean_sub, k)*k for k in kl_basis], axis=0)
     
 
 def get_stamp_coordinates(center, drow, dcol, imshape):
@@ -725,14 +729,15 @@ def fmmf_throughput_correction(psfs, kl_basis):
     mf_norm = mf_norm_1 - mf_norm_2
     return mf_norm
 
-def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region_pix=None,
-                            mf_locations=None):
+def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
+                            imshape=None, region_pix=None, mf_locations=None):
     """
     generate a matched filter with a model of the PSF. For now we assume that the KL basis covers the entire image
     Arguments:
         psf: square postage stamp of the PSF
         RCobj [None]: reference cube object. If given, overrides other args and they are not needed.
         kl_basis: karhunen-loeve basis for PC projection
+        n_basis [None]: number of KL modes to use. Default: all (None defaults to all)
         imshape: Nrows x Ncols
         region_pix: the raveled image pixel indices covered by the KL basis. 
             if None, assumed to cover the whole image
@@ -746,7 +751,8 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
     
     if RCobj is not None:
         try:
-            kl_basis = RCobj.kl_basis
+            n_basis = RCobj.n_basis
+            kl_basis = RCobj.kl_basis.copy()
             imshape = RCobj.imshape
             region_pix = RCobj.flat_region_ind
             mf_locations = RCobj.matched_filter_locations
@@ -754,7 +760,10 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
             print("Error: ", e)
             print("matched_filter set to None")
             return None
-            
+
+    # use the right number of KL basis vectors
+    if n_basis is not None:
+        kl_basis = kl_basis[:n_basis]
     # if mf_locations is not set, assume you want a MF at every pixel in the image
     if mf_locations is None:
         mf_locations = range(imshape[0]*imshape[1])
@@ -779,10 +788,9 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, imshape=None, region
     # when you apply KLIP, be careful only to use the selected region of the image
 
     # npix is the flattened pixel indices; default is all of them
-    npix = range(imshape[0]*imshape[1])
-    if mf_locations is not None:
-        npix = range(len(mf_locations))#np.array((np.unravel_index(mf_locations, imshape)).T
-        #pix = mf_locations
+    npix = range(len(mf_locations)) #range(imshape[0]*imshape[1])
+    #if mf_locations is not None:
+    #    npix = range(len(mf_locations))#np.array((np.unravel_index(mf_locations, imshape)).T
     for i in npix:
         template = mf_flat_template[i][region_pix]
         mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template, kl_basis)
