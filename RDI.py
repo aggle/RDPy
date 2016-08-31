@@ -189,6 +189,16 @@ class ReferenceCube(object):
 
     # Forward modeling and Matched Filter
     @property
+    def evals(self):
+        """
+        Eigenvalues associated with the covariance matrix eigenvectors
+        """
+        return self._evals
+    @evals.setter
+    def evals(self, newval):
+        self._evals = newval
+        
+    @property
     def kl_basis(self):
         return self._kl_basis
     @kl_basis.setter
