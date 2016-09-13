@@ -13,6 +13,7 @@ from astropy import units
 import scipy.linalg as la
 import scipy.ndimage as ndimage
 from scipy.stats import t
+from functools import reduce
 
 class ReferenceCube(object):
     """
@@ -766,7 +767,7 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
             region_pix = RCobj.flat_region_ind
             mf_locations = RCobj.matched_filter_locations
         except AttributeError as e:
-            print("Error: ", e)
+            print(("Error: ", e))
             print("matched_filter set to None")
             return None
 
@@ -775,10 +776,10 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
         kl_basis = kl_basis[:n_basis]
     # if mf_locations is not set, assume you want a MF at every pixel in the image
     if mf_locations is None:
-        mf_locations = range(imshape[0]*imshape[1])
+        mf_locations = list(range(imshape[0]*imshape[1]))
     # if region_pix is not set, assume the whole image was used for KLIP
     if region_pix is None:
-        region_pix = range(imshape[0]*imshape[1])
+        region_pix = list(range(imshape[0]*imshape[1]))
     
     mf_template_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
     mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
@@ -797,7 +798,7 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
     # when you apply KLIP, be careful only to use the selected region of the image
 
     # npix is the flattened pixel indices; default is all of them
-    npix = range(len(mf_locations)) #range(imshape[0]*imshape[1])
+    npix = list(range(len(mf_locations))) #range(imshape[0]*imshape[1])
     #if mf_locations is not None:
     #    npix = range(len(mf_locations))#np.array((np.unravel_index(mf_locations, imshape)).T
     for i in npix:
@@ -830,10 +831,10 @@ slices corresponding to mf_pix
     # use the right number of KL basis vectors
     # if mf_locations is not set, assume you want a MF at every pixel in the image
     if mf_locations is None:
-        mf_locations = range(imshape[0]*imshape[1])
+        mf_locations = list(range(imshape[0]*imshape[1]))
     # if region_pix is not set, assume the whole image was used for KLIP
     if region_pix is None:
-        region_pix = range(imshape[0]*imshape[1])
+        region_pix = list(range(imshape[0]*imshape[1]))
     
     mf_template_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
     mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
@@ -870,7 +871,7 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
             matched_filter = RCobj.matched_filter
             locations = RCobj.matched_filter_locations
         except AttributeError as e:
-            print("Error: ", e)
+            print(("Error: ", e))
             print("MF not applied, None returned")
             return None
 
@@ -881,7 +882,7 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
     flat_image[nanpix_img] = 0
     matched_filter[nanpix_mf] = 0
     mf_map = np.zeros_like(flat_image)
-    if locations is None: locations = range(np.size(mf_map))
+    if locations is None: locations = list(range(np.size(mf_map)))
     for i,pix in enumerate(locations):
         mf_map[pix] = np.dot(matched_filter[i], flat_image)
     mf_map[nanpix_img] = np.nan
