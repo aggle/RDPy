@@ -13,6 +13,7 @@ from astropy import units
 import scipy.linalg as la
 import scipy.ndimage as ndimage
 from scipy.stats import t
+
 from functools import reduce
 
 class ReferenceCube(object):
@@ -199,6 +200,16 @@ class ReferenceCube(object):
     @evals.setter
     def evals(self, newval):
         self._evals = newval
+
+    @property
+    def evecs(self):
+        """
+        Eigenvectors of the covariance matrix
+        """
+        return self._evecs
+    @evecs.setter
+    def evecs(self, newval):
+        self._evals = newval
         
     @property
     def kl_basis(self):
@@ -230,6 +241,8 @@ class ReferenceCube(object):
     def matched_filter_locations(self, newval=None):
         if newval is None and self.matched_filter is not None:
             newval = np.arange(len(self.matched_filter))
+        elif newval is None and self.matched_filter is None:
+            newval = np.arange(self.npix_region)
         self._matched_filter_locations = newval
         
         
@@ -302,6 +315,20 @@ class ReferenceCube(object):
         return covar_matrix[np.meshgrid(indices, indices)].copy()
 
 
+    def get_partial_kl_basis(self, img_index):
+        """
+        Compute in an efficient way the KL basis when you drop one image
+        from the set of references
+        Args:
+            img_index: index of the image being removed from the KL basis
+        Returns:
+            partial_basis: KL basis with one fewer image in the references
+        """
+        #eval = self.eval[img_index]
+        # extend this over the whole basis
+        perturb = 1/np.sqrt(self.evals)[:,None] *np.dot(self.evecs.T, self.flat_cube_region)
+        partial_basis = self.kl_basis - perturb
+        return perturb
 
 ############################
 ## PSF Injection ###########
@@ -620,12 +647,14 @@ def image_2_seppa(coord, orientation=0, center=(40,40), pix_scale = 75):
     pix_scale: 75 mas/pix for nicmos
     """
     coord = np.array(coord)
+    if coord.ndim == 1:
+        coord = np.expand_dims(coord, 0)
     center = np.array(center)
     centered_coord = coord-center
-    sep = np.linalg.norm(centered_coord)*pix_scale
-    pa = np.arctan(centered_coord[0]/centered_coord[1]) * 180/np.pi
+    sep = np.linalg.norm(centered_coord, axis=-1)*pix_scale
+    pa = np.arctan2(centered_coord[:,0],centered_coord[:,1]) * 180/np.pi
     pa -= orientation
-    return (sep, pa)
+    return (np.squeeze(sep), np.squeeze(pa))
 
 def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
                   return_raveled=False, shape=None):
@@ -644,17 +673,26 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
         Nearest integer of the coordinate, either 1-D or 2-D depending on value of return_raveled
     """
     # convert all angles from degrees to radians
+    sep = np.array(sep)
+    pa = np.array(pa)
+    if sep.ndim == 1:
+        sep = np.expand_dims(sep,0)
+    if pa.ndim == 1:
+        pa = np.expand_dims(pa,0)
     center = np.array(center)
+
     pa = pa*np.pi/180
     orientation = orientation*np.pi/180
     tot_ang = pa+orientation
+    
     row = sep*np.cos(tot_ang)/pix_scale + center[0]
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
-    row, col = (np.int(np.round(row)), np.int(np.round(col)))
+    row, col = (np.array(np.round(row),dtype=np.int),
+                np.array(np.round(col), dtype=np.int))
     if return_raveled is True:
         ind = np.ravel_multi_index((row, col), shape, mode='clip')
         return ind
-    return row, col
+    return np.squeeze(row), np.squeeze(col)
 
 
 def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
@@ -874,17 +912,32 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
             print(("Error: ", e))
             print("MF not applied, None returned")
             return None
+        
+    # get the image into the right shape
+    orig_shape = np.copy(image.shape)
+    im_shape = image.shape[-2:]
+    if image.ndim == 2:
+        image = image.ravel()
+        image = np.expand_dims(image,0)
+    elif image.ndim == 3:
+        image = image.reshape(image.shape[0], reduce(lambda x,y:x*y, image.shape[1:]))
 
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
-    flat_image = image.ravel()
-    nanpix_img = np.where(np.isnan(flat_image))
+    nanpix_img = np.where(np.isnan(image))
     nanpix_mf = np.where(np.isnan(matched_filter))
-    flat_image[nanpix_img] = 0
+    image[nanpix_img] = 0
     matched_filter[nanpix_mf] = 0
-    mf_map = np.zeros_like(flat_image)
-    if locations is None: locations = list(range(np.size(mf_map)))
-    for i,pix in enumerate(locations):
-        mf_map[pix] = np.dot(matched_filter[i], flat_image)
+
+    # instantiate the map
+    mf_map = np.zeros_like(image)
+    if locations is None: locations = list(range(im_shape[0]*im_shape[1]))
+    # apply matrix multiplication
+    #for i,pix in enumerate(locations):
+    #    mf_map[:,pix] = np.dot(image,matched_filter[i])
+    # put the nans back
+    print(locations)
+    mf_map[:,locations] = np.dot(image, matched_filter.T)
+    matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan
-    return mf_map.reshape(image.shape)
+    return mf_map.reshape(orig_shape)
                            

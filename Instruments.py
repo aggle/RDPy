@@ -66,7 +66,7 @@ class NICMOS(object):
         self._IWAmask = newval
     def make_IWA_mask(self, shape, center, iwa):
         rad = np.linalg.norm(np.indices(shape) - center[:,None,None], axis=0)
-        outside = np.where(rad >= iwa)
+        outside = np.where(rad >= iwa/2.)
         mask = np.zeros(shape)
         mask[outside] = 1
         return mask
