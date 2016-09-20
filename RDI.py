@@ -16,6 +16,8 @@ from scipy.stats import t
 
 from functools import reduce
 
+import Instruments
+
 class ReferenceCube(object):
     """
     Things this class can/should do:
@@ -25,7 +27,7 @@ class ReferenceCube(object):
         - return a subset of the covariance matrix
         - calculate the distance of an image from the reference cube entries
     """
-    def __init__(self, cube, region_mask=None, target=None):
+    def __init__(self, cube, region_mask=None, target=None, instrument=None):
         """
         Initialize the reference cube class starting with a cube of stacked reference images
         Initialization entails:
@@ -33,6 +35,8 @@ class ReferenceCube(object):
             - get the shape of the images
             - calculate the covariance matrix
         """
+        # instrument where the data comes from
+        self.instrument = instrument
         # reference images
         self.cube = cube
         self.Nref = cube.shape[0]
@@ -99,8 +103,8 @@ class ReferenceCube(object):
         except AttributeError:
             self._target = None
             return
-        
-        new_cube_order = sort_squared_distance(self.target, self.cube)
+
+        new_cube_order = sort_squared_distance(self._target, self.cube)
         self.cube = self.cube[new_cube_order]
         self.reference_indices = new_cube_order
     @property
@@ -330,6 +334,48 @@ class ReferenceCube(object):
         partial_basis = self.kl_basis - perturb
         return perturb
 
+    #####################################
+    ### Wrappers for module functions ###
+    #####################################
+    def generate_matched_filter(self, return_mf=False):
+        """
+        This is a wrapper for RDI.generate_matched_filter that defaults to the 
+        reference cube properties as arguments
+        Default behavior: returns nothing: sets self.matched_filter
+        If return_mf is True, then returns matched filter
+        For more help, see RDI.generate_matched_filter()
+        """
+        
+        mf = generate_matched_filter(psf = self.instrument.psf,
+                                     kl_basis = self.kl_basis,
+                                     n_bases = self.n_basis,
+                                     imshape = self.imshape,
+                                     region_pix = self.flat_region_ind,
+                                     mf_locations = self.matched_filter_locations)
+        if return_mf is False:
+            self.matched_filter = mf
+        else:
+            return mf
+
+    def apply_matched_filter_to_image(self, image):
+        """
+        This is a wrapper for RDI.generate_matched_filter that defaults to the 
+        reference cube properties as arguments
+        Args:
+            image: 2-D image
+        Returns:
+            mf_map: 2-D image where the matched filter has been applied 
+                    at the designated positions
+        For more help, see RDI.generate_matched_filter()
+        """
+        mf_map = apply_matched_filter_to_image(image,
+                                               matched_filter=self.matched_filter,
+                                               locations=self.matched_filter_locations)
+        return mf_map
+    
+
+
+    
 ############################
 ## PSF Injection ###########
 ############################
@@ -699,23 +745,37 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
-      img_flat: Npix 1-D flattened image 
+      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
       kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
       n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
           If None, use full basis
     Return:
       subtracted_img: array with same shape as input image, after KL PSF subtraction
     """
+    # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
+    if img_flat.ndim == 1:
+        img_flat = np.expand_dims(img_flat, 0)
+        
     kl_basis = np.asarray(kl_basis)
-    img_flat_mean_sub = img_flat - np.nanmean(img_flat)
+    img_flat_mean_sub = img_flat - np.expand_dims(np.nanmean(img_flat, axis=-1),-1)
 
+    # make sure n_bases is iterable
     if n_bases is None:
         n_bases = [len(kl_basis)]
-    #if n_bases is not None:
-    kl_sub = np.array([img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k
-                                                      for k in kl_basis[:Kmax]], axis=0)
-                       for Kmax in n_bases])
-    return np.squeeze(kl_sub)
+    if hasattr(n_bases, '__iter__') is False:
+        n_bases = [n_bases]
+
+    #kl_sub = np.array([img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k
+    #                                                  for k in kl_basis[:Kmax]], axis=0)
+    #                   for Kmax in n_bases])
+    psf_model = np.array([np.nansum(np.expand_dims(np.dot(img_flat_mean_sub,
+                                                          kl_basis[:Kmax].T),
+                                                   axis=-1) * kl_basis[:Kmax],
+                                    axis=1)
+                          for Kmax in n_bases])
+    kl_sub = img_flat_mean_sub - psf_model
+    return np.squeeze(np.array(kl_sub))
+
     
 
 def get_stamp_coordinates(center, drow, dcol, imshape):
@@ -763,29 +823,38 @@ def get_stamp_coordinates(center, drow, dcol, imshape):
     stamp_coords = np.indices(stamp.shape)[:,row_start:row_end,col_start:col_end]
     return (img_coords, stamp_coords)
 
-def fmmf_throughput_correction(psfs, kl_basis):
+def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
     """
     Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
     Arguments:
         psfs: the flattened psf models
         kl_basis: the KL basis for projection
+        n_bases [None]: list of KL_max values
+    returns:
+        [(n_basis x) 1] throughput correction
     """
+    if n_bases is None:
+        n_bases = [len(kl_bases)]
+
     mf_norm_1 = np.linalg.norm(psfs, axis=-1)**2
-    mf_norm_2 = np.nansum([np.dot(psfs, k)**2 for k in kl_basis], axis=0)
-    mf_norm = mf_norm_1 - mf_norm_2
+    mf_norm_2 = np.array([np.nansum([np.dot(psfs, k)**2 for k in kl_basis[:n]], axis=0)[0]
+                           for n in n_bases])
+    mf_norm = np.array([mf_norm_1 - mfn2 for mfn2 in mf_norm_2])
     return mf_norm
 
-def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
-                            imshape=None, region_pix=None, mf_locations=None):
+# DEPRECATED
+def generate_matched_filter_old(psf, kl_basis=None, n_basis = None,
+                                imshape=None, region_pix=None, mf_locations=None):
     """
+    # DEPRECATED - get rid of this function once the new generate_matched_filter() is 
+                   confirmed to work
     generate a matched filter with a model of the PSF. For now we assume that 
     the KL basis covers the entire image.
     You can pass a ReferenceCube objects that has all the required arguments as attributes
     Arguments:
         psf: square postage stamp of the PSF
-        RCobj [None]: reference cube object. If given, overrides other args and they are not needed.
         kl_basis [None]: karhunen-loeve basis for PC projection
-        n_basis [None]: number of KL modes to use. Default: all (None defaults to all)
+        n_basis [None]: list of number of KL modes to use. Default: all (None defaults to all)
         imshape [None]: Nrows x Ncols
         region_pix: the raveled image pixel indices covered by the KL basis. 
             if None, assumed to cover the whole image
@@ -796,25 +865,11 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
             if mf_pix is given, it will be 0 except for the slices corresponding to mf_pix
             (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
     """
-    
-    if RCobj is not None:
-        try:
-            n_basis = RCobj.n_basis
-            kl_basis = RCobj.kl_basis.copy()
-            imshape = RCobj.imshape
-            region_pix = RCobj.flat_region_ind
-            mf_locations = RCobj.matched_filter_locations
-        except AttributeError as e:
-            print(("Error: ", e))
-            print("matched_filter set to None")
-            return None
-
-    # use the right number of KL basis vectors
-    if n_basis is not None:
-        kl_basis = kl_basis[:n_basis]
     # if mf_locations is not set, assume you want a MF at every pixel in the image
     if mf_locations is None:
         mf_locations = list(range(imshape[0]*imshape[1]))
+    if np.ndim(mf_locations) == 0:
+        mf_locations = [mf_locations]
     # if region_pix is not set, assume the whole image was used for KLIP
     if region_pix is None:
         region_pix = list(range(imshape[0]*imshape[1]))
@@ -833,21 +888,92 @@ def generate_matched_filter(psf, RCobj=None, kl_basis=None, n_basis = None,
     mf_flat_pickout =  np.array([i.ravel() for i in mf_pickout_cube])
     # find the klip-modified PSFs
     mf_flat_template_klipped = np.zeros_like(mf_flat_template)
-    # when you apply KLIP, be careful only to use the selected region of the image
 
-    # npix is the flattened pixel indices; default is all of them
-    npix = list(range(len(mf_locations))) #range(imshape[0]*imshape[1])
-    #if mf_locations is not None:
-    #    npix = range(len(mf_locations))#np.array((np.unravel_index(mf_locations, imshape)).T
+    # npix is used to index the locations to apply the MF
+    npix = list(range(len(mf_locations)))
+
+    # when you apply KLIP, be careful only to use the selected region of the image
+    # this can be parallelized but uses a lot of memory! 
     for i in npix:
         template = mf_flat_template[i][region_pix]
-        mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template, kl_basis)
+        mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template,
+                                                                           kl_basis[:n_basis])
     # leave only the region of interest in the images
     mf_flat_template_klipped *= mf_flat_pickout
     # throughput normalization
-    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix], kl_basis)
+    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
+                                              kl_basis[:n_basis])
     MF = mf_flat_template_klipped/mf_norm_flat[:,None]
     return MF
+
+
+def generate_matched_filter(psf, kl_basis=None, n_bases=None,
+                            imshape=None, region_pix=None, mf_locations=None):
+    """
+    generate a matched filter with a model of the PSF. For now we assume that 
+    the KL basis covers the entire image.
+    You can pass a ReferenceCube objects that has all the required arguments as attributes
+    Arguments:
+        psf: square postage stamp of the PSF
+        kl_basis [None]: karhunen-loeve basis for PC projection
+        n_basis [None]: list of number of KL modes to use. Default: all (None defaults to all)
+        imshape [None]: Nrows x Ncols
+        region_pix: the raveled image pixel indices covered by the KL basis. 
+            if None, assumed to cover the whole image
+        mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
+    Returns:
+        MF: [Nloc x [Nkl x [Npix]]] cube of flattened matched filters. 
+            The first index tells you what pixel in the image it corresponds to, 
+            through np.unravel_index(i, imshape)
+            if mf_locations is given, this will be 0 except for the slices corresponding to mf_pix
+            (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
+    """
+    # if mf_locations is not set, assume you want a MF at every pixel in the image
+    if mf_locations is None:
+        mf_locations = list(range(imshape[0]*imshape[1]))
+    if np.ndim(mf_locations) == 0:
+        mf_locations = [mf_locations]
+    # if region_pix is not set, assume the whole image was used for KLIP
+    if region_pix is None:
+        region_pix = list(range(imshape[0]*imshape[1]))
+    if np.ndim(n_bases) == 0:
+        n_bases = np.expand_dims(n_bases,0)
+
+    # this stores the PSFs
+    mf_template_cube = np.zeros((len(mf_locations), imshape[0], imshape[1]))
+    # store the klip-subtracted PSF models here - index across locations and KL modes
+    mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations), 
+                                         imshape[0], imshape[1]))
+    # this is used to pick out the desired PSF region *after* KLIP
+    mf_pickout_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
+    
+    # inject the instrument PSFs - this cannot be done on a flattened cube
+    # only inject PSFs at the specified positions
+    # inject_psf will automatically work across the n_bases axis
+    for i, p in enumerate(mf_locations):
+        center = np.unravel_index(p, imshape) # injection location
+        mf_template_cube[i] = inject_psf(np.zeros(imshape), psf, center)
+        mf_pickout_cube[i]  = inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
+
+    # flatten along the pixel axis
+    mf_flat_template = flatten_image_axes(mf_template_cube)
+    mf_flat_template_klipped = flatten_image_axes(mf_flat_template_klipped)
+    mf_flat_pickout =  flatten_image_axes(mf_pickout_cube)
+
+    npix = list(range(len(mf_locations)))
+    for i in npix:
+        psf_template = mf_flat_template[i,region_pix]
+        # don't be intimidated - fancy python crap to match array dims
+        tmp = np.tile(klip_subtract_with_basis(psf_template,
+                                               kl_basis,
+                                               n_bases),
+                      np.ones_like(mf_flat_template.shape))
+        mf_flat_template_klipped[:,i,region_pix] = tmp
+    mf_flat_template_klipped *= mf_flat_pickout
+    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
+                                              kl_basis, n_bases)
+    MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
+    return MF 
 
 def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=None):
     """
@@ -859,10 +985,10 @@ def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=Non
             if None, assumed to cover the whole image
         mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
     Returns:
-        MF: UNNORMALIZED cube of flattened matched filters. 
+        MF: flux-normalized cube of flattened matched filters. 
             The first index tells you what pixel in the image it corresponds to, through
-            np.unravel_index(i, imshape) if mf_locations is given, it will be 0 except for the 
-slices corresponding to mf_pix 
+            np.unravel_index(i, imshape) if mf_locations is given, it will be 0 except 
+            for the slices corresponding to mf_pix 
             (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
     """
 
@@ -894,7 +1020,7 @@ slices corresponding to mf_pix
     mf_flat_template *= mf_flat_pickout
     return mf_flat_template
 
-def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locations=None):
+def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     """
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
@@ -904,15 +1030,6 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
     Returns:
         mf_map: 2-D image where the matched filter has been applied
     """
-    if RCobj is not None:
-        try:
-            matched_filter = RCobj.matched_filter
-            locations = RCobj.matched_filter_locations
-        except AttributeError as e:
-            print(("Error: ", e))
-            print("MF not applied, None returned")
-            return None
-        
     # get the image into the right shape
     orig_shape = np.copy(image.shape)
     im_shape = image.shape[-2:]
@@ -920,7 +1037,7 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
         image = image.ravel()
         image = np.expand_dims(image,0)
     elif image.ndim == 3:
-        image = image.reshape(image.shape[0], reduce(lambda x,y:x*y, image.shape[1:]))
+        image = flatten_image_axes(image)
 
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     nanpix_img = np.where(np.isnan(image))
@@ -934,10 +1051,27 @@ def apply_matched_filter_to_image(image, RCobj=None, matched_filter=None, locati
     # apply matrix multiplication
     #for i,pix in enumerate(locations):
     #    mf_map[:,pix] = np.dot(image,matched_filter[i])
+    print(mf_map[:,locations].shape)
+    
+    print(np.dot(image, matched_filter.T).shape)
+    matched_filter = np.rollaxis(matched_filter, 1, 0)
+    mf_map[:,locations] = np.array([np.dot(image, mf) for mf in matched_filter])
+    matched_filter = np.rollaxis(matched_filter, 1, 0)
     # put the nans back
-    print(locations)
-    mf_map[:,locations] = np.dot(image, matched_filter.T)
+    #print(locations)
+
     matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
                            
+def flatten_image_axes(array):
+    """
+    returns the array with the final two axes - assumed to be the image pixels - flattened
+    """
+    shape = array.shape
+    imshape = shape[-2:]
+    newshape = [i for i in list(shape[:-2])]
+
+    newshape += [reduce(lambda x,y: x*y, shape[-2:])]
+    return array.reshape(newshape)
+
