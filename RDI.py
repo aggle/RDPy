@@ -960,8 +960,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
     mf_flat_template_klipped = flatten_image_axes(mf_flat_template_klipped)
     mf_flat_pickout =  flatten_image_axes(mf_pickout_cube)
 
-    npix = list(range(len(mf_locations)))
-    for i in npix:
+    nloc = list(range(len(mf_locations)))
+    for i in nloc:
         psf_template = mf_flat_template[i,region_pix]
         # don't be intimidated - fancy python crap to match array dims
         tmp = np.tile(klip_subtract_with_basis(psf_template,
@@ -973,7 +973,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
     mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
                                               kl_basis, n_bases)
     MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
-    return MF 
+    return np.rollaxis(MF,0,2) # put the locations axis first 
 
 def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=None):
     """
@@ -1051,15 +1051,15 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     # apply matrix multiplication
     #for i,pix in enumerate(locations):
     #    mf_map[:,pix] = np.dot(image,matched_filter[i])
-    print(mf_map[:,locations].shape)
+    #print(mf_map[:,locations].shape)
     
-    print(np.dot(image, matched_filter.T).shape)
-    matched_filter = np.rollaxis(matched_filter, 1, 0)
-    mf_map[:,locations] = np.array([np.dot(image, mf) for mf in matched_filter])
-    matched_filter = np.rollaxis(matched_filter, 1, 0)
-    # put the nans back
-    #print(locations)
+    #print(np.dot(image, matched_filter.T).shape)
+    try:
+        mf_map[:,locations] = np.array([np.diag(np.dot(mf, image.T)) for mf in matched_filter]).T
+    except ValueError:
+        mf_map[:,locations] = np.array([np.dot(mf, image.T) for mf in matched_filter]).T
 
+    # put the nans back
     matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
