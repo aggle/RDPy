@@ -16,8 +16,6 @@ from scipy.stats import t
 
 from functools import reduce
 
-import Instruments
-
 class ReferenceCube(object):
     """
     Things this class can/should do:
@@ -34,6 +32,12 @@ class ReferenceCube(object):
             - get the number of reference images
             - get the shape of the images
             - calculate the covariance matrix
+        Args:
+          cube: Nref x (Nrow x Ncol) cube of reference images (can be flat cube)
+          region_mask [None]: a binary mask of which pixels in the image to use
+          target: image to be PSF-subtracted; used to sort ref images
+          instrument: Instrument class object that tells ReferenceCube which instr params to use for
+              things like forward-modeling the PSF
         """
         # instrument where the data comes from
         self.instrument = instrument
@@ -687,18 +691,21 @@ def FM_noise(bgnd, psf, kl_basis):
 def image_2_seppa(coord, orientation=0, center=(40,40), pix_scale = 75):
     """
     convert from image coordinates to sep and pa
-    coord: (row, col) coord in image
-    orientation: clockwise angle between y in image and north
-    center: image center
-    pix_scale: 75 mas/pix for nicmos
+    Args: 
+      coord: (row, col) coord in image
+      orientation: clockwise angle between y in image and north in degrees
+      center: image center
+      pix_scale: 75 mas/pix for nicmos
+    Returns:
+      (sep, pa) in [mas, deg]
     """
     coord = np.array(coord)
     if coord.ndim == 1:
         coord = np.expand_dims(coord, 0)
     center = np.array(center)
     centered_coord = coord-center
-    sep = np.linalg.norm(centered_coord, axis=-1)*pix_scale
-    pa = np.arctan2(centered_coord[:,0],centered_coord[:,1]) * 180/np.pi
+    sep = np.linalg.norm(centered_coord, axis=-1)
+    pa = np.arctan2(centered_coord[:,0],centered_coord[:,1]) * 180/np.pi 
     pa -= orientation
     return (np.squeeze(sep), np.squeeze(pa))
 
@@ -1075,3 +1082,58 @@ def flatten_image_axes(array):
     newshape += [reduce(lambda x,y: x*y, shape[-2:])]
     return array.reshape(newshape)
 
+
+################
+### KL BASIS ###
+################
+def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=False):
+    """
+    Generate the KL basis from a set of reference images. Always returns the full KL basis
+    This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
+    Args:
+        references: Nimg x Npix flattened array of reference images
+        kl_max [None]: number of KL modes to return. Default: all
+        return_evecs [False]: if True, return the eigenvectors of the covar matrix
+        return_evals [False]: if true, return the eigenvalues of the eigenvectors
+    Returns:
+        kl_basis: Full KL basis (up to kl_max modes if given; default len(references))
+        evecs: covariance matrix eigenvectors, if desired
+        evals: eigenvalues of the eigenvectors, if desired
+    """
+    nrefs, npix = references.shape
+    ref_psfs_mean_sub = references - np.expand_dims(np.nanmean(references, axis=-1), -1)
+    # set nan's to 0 so that they don't contribute to the covar matrix, and don't mess up numpy
+    nan_refs = np.where(np.isnan(references))
+    ref_psfs_mean_sub[nan_refs] = 0
+
+    # generate the covariance matrix
+    if kl_max is None:
+        kl_max = nrefs-1
+    covar = np.cov(ref_psfs_mean_sub)#, ddof=1) # use ddof to get an unnormalized cov matrix
+    evals, evecs = la.eigh(covar, eigvals=(0,kl_max-1))
+    # normalize the eigenvalues
+    evals /= npix-1.
+    
+    # reverse the evals and evecs to have the biggest first
+    evals = np.copy(evals[::-1])
+    evecs = np.copy(evecs[:,::-1], order='F')
+    
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
+    kl_basis = kl_basis / np.sqrt(evals)
+    check_nans = np.any(evals <= 0)
+    if check_nans:
+        neg_evals = (np.where(evals <= 0))[0]
+        kl_basis[:,neg_evals] = 0
+
+    # take care of nans
+    if check_nans:
+        kl_basis[:, neg_evals] = 0
+    
+    return_objs = [kl_basis]
+    if return_evecs:
+        return_objs.append(evecs)
+    if return_evals:
+        return_objs.append(evals)
+    if len(return_objs) == 1:
+        return_objs = return_objs[0]
+    return return_objs

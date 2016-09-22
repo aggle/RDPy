@@ -1,5 +1,3 @@
-import abc
-
 import sys
 import os
 import numpy as np
@@ -8,7 +6,9 @@ import pandas as pd
 from astropy.io import fits
 from astropy import units
 
-class NICMOS(object):
+from Instrument import Instrument
+
+class NICMOS(Instrument):
     """
     class defining the properties of the NICMOS instrument
     image shape, pixel scale, IWA
@@ -64,6 +64,7 @@ class NICMOS(object):
     @IWAmask.setter
     def IWAmask(self, newval):
         self._IWAmask = newval
+    # mask generator    
     def make_IWA_mask(self, shape, center, iwa):
         rad = np.linalg.norm(np.indices(shape) - center[:,None,None], axis=0)
         outside = np.where(rad >= iwa/2.)
