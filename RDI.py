@@ -341,7 +341,13 @@ class ReferenceCube(object):
     #####################################
     ### Wrappers for module functions ###
     #####################################
-    def generate_matched_filter(self, return_mf=False):
+    def generate_matched_filter(self, return_mf=False, **kwargs):
+#                                psf = self.instrument.psf,
+#                                kl_basis = self.kl_basis,
+#                                n_bases = self.n_basis,
+#                                imshape = self.imshape,
+#                                region_pix = self.flat_region_ind,
+#                                mf_locations = self.matched_filter_locations):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
         reference cube properties as arguments
@@ -349,19 +355,32 @@ class ReferenceCube(object):
         If return_mf is True, then returns matched filter
         For more help, see RDI.generate_matched_filter()
         """
-        
-        mf = generate_matched_filter(psf = self.instrument.psf,
-                                     kl_basis = self.kl_basis,
-                                     n_bases = self.n_basis,
-                                     imshape = self.imshape,
-                                     region_pix = self.flat_region_ind,
-                                     mf_locations = self.matched_filter_locations)
+
+        keys=['psf','kl_basis','n_bases','imshape','region_pix','mf_locations']
+        argdict = {}
+        #for key in keys:
+        #    argdict[key] = kwargs.get(key, getattr(self,key))
+        argdict['psf'] = kwargs.get('psf',self.instrument.psf)
+        try:
+            argdict['kl_basis'] = kwargs.get('kl_basis', self.kl_basis)
+        except AttributeError as e:
+            print(e)
+            print("No KL basis - generating MF with unmodified PSFs")
+            argdict['kl_basis'] = None
+        argdict['n_bases'] = kwargs.get('n_bases', self.n_basis)
+        argdict['imshape'] = kwargs.get('imshape', self.imshape)
+        argdict['region_pix'] = kwargs.get('region_pix', self.flat_region_ind)
+        argdict['mf_locations'] = kwargs.get('mf_locations', self.matched_filter_locations)
+
+
+        #print(argdict)
+        mf = generate_matched_filter(**argdict) # this calls the module method
         if return_mf is False:
             self.matched_filter = mf
         else:
             return mf
 
-    def apply_matched_filter_to_image(self, image):
+    def apply_matched_filter_to_image(self, image, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
         reference cube properties as arguments
@@ -372,9 +391,12 @@ class ReferenceCube(object):
                     at the designated positions
         For more help, see RDI.generate_matched_filter()
         """
-        mf_map = apply_matched_filter_to_image(image,
-                                               matched_filter=self.matched_filter,
-                                               locations=self.matched_filter_locations)
+        argdict={}
+        argdict['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
+        argdict['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
+        mf_map = apply_matched_filter_to_image(image, **argdict)
+                                               #matched_filter,
+                                               #matched_filter_locations)
         return mf_map
     
 
@@ -748,7 +770,7 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
     return np.squeeze(row), np.squeeze(col)
 
 
-def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
+def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_subtract=False):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
@@ -756,6 +778,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
       kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
       n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
           If None, use full basis
+      double_subtract: apply KL twice (useful for some FMMF cases)
     Return:
       subtracted_img: array with same shape as input image, after KL PSF subtraction
     """
@@ -781,6 +804,22 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
                                     axis=1)
                           for Kmax in n_bases])
     kl_sub = img_flat_mean_sub - psf_model
+    # DOUBLE_SUBTRACT DOES NOT WORK YET
+    kl_doublesub = np.zeros_like(kl_sub)
+    if double_subtract is True:
+        kl_doublesub = np.array([np.nansum(np.expand_dims(np.dot(kl_sub[i],
+                                                           kl_basis[:n_bases[i]].T),
+                                                    axis=-1) * kl_basis[:n_bases[i]],
+                                     axis=1)
+                           for i in range(len(n_bases))])
+        #for i,k in enumerate(kl_sub): # i indices the number of KL modes
+        #    tmp = np.nansum(np.expand_dims(np.dot(k - np.nanmean(k),
+        #                                          kl_basis[:n_bases[i]].T),
+        #                                          axis=-1) * kl_basis[:n_bases[i]],
+        #                           axis=1)
+        #    print(tmp.shape)
+        #    kl_sub[i] = tmp
+        return np.squeeze(kl_doublesub)
     return np.squeeze(np.array(kl_sub))
 
     
@@ -841,7 +880,7 @@ def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
         [(n_basis x) 1] throughput correction
     """
     if n_bases is None:
-        n_bases = [len(kl_bases)]
+        n_bases = [len(kl_basis)]
 
     mf_norm_1 = np.linalg.norm(psfs, axis=-1)**2
     mf_norm_2 = np.array([np.nansum([np.dot(psfs, k)**2 for k in kl_basis[:n]], axis=0)[0]
@@ -948,9 +987,6 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 
     # this stores the PSFs
     mf_template_cube = np.zeros((len(mf_locations), imshape[0], imshape[1]))
-    # store the klip-subtracted PSF models here - index across locations and KL modes
-    mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations), 
-                                         imshape[0], imshape[1]))
     # this is used to pick out the desired PSF region *after* KLIP
     mf_pickout_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
     
@@ -964,8 +1000,17 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 
     # flatten along the pixel axis
     mf_flat_template = flatten_image_axes(mf_template_cube)
-    mf_flat_template_klipped = flatten_image_axes(mf_flat_template_klipped)
     mf_flat_pickout =  flatten_image_axes(mf_pickout_cube)
+
+    # if no KL basis is supplied, return the *UNMODIFIED* psf
+    if kl_basis is None:
+        return mf_flat_template * mf_flat_pickout
+    # otherwise, go on to the KLIP subtraction of the MF
+    
+    # store the klip-subtracted PSF models here - index across locations and KL modes
+    mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations), 
+                                         imshape[0], imshape[1]))
+    mf_flat_template_klipped = flatten_image_axes(mf_flat_template_klipped)
 
     nloc = list(range(len(mf_locations)))
     for i in nloc:
@@ -1054,7 +1099,8 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
 
     # instantiate the map
     mf_map = np.zeros_like(image)
-    if locations is None: locations = list(range(im_shape[0]*im_shape[1]))
+    if locations is None:
+        locations = list(range(im_shape[0]*im_shape[1]))
     # apply matrix multiplication
     #for i,pix in enumerate(locations):
     #    mf_map[:,pix] = np.dot(image,matched_filter[i])
