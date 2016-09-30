@@ -309,15 +309,17 @@ class ReferenceCube(object):
         """
         return self.cube[indices]
 
-    def get_reduced_covariance_matrix(self, targ_ix):
+    def get_reduced_covariance_matrix(self, ix):
         """
         return a copy of the covariance matrix where the covariance with one of the
         images of the reference cube has been removed
+        Args:
+          ix: index of the image to remove from the covariance matrix
         """
         covmat_shape = self.covar_matrix.shape
         mask = np.ones(covmat_shape)
-        mask[targ_ix,:] = 0
-        mask[:,targ_ix] = 0
+        mask[ix,:] = 0
+        mask[:,ix] = 0
         return self.covar_matrix[np.where(mask==1)].reshape(np.array(covmat_shape)-1)
 
     def get_covariance_matrix_subset(self, indices, covar_matrix=None):
@@ -345,9 +347,10 @@ class ReferenceCube(object):
         """
         #eval = self.eval[img_index]
         # extend this over the whole basis
-        perturb = 1/np.sqrt(self.evals)[:,None] *np.dot(self.evecs.T, self.flat_cube_region)
-        partial_basis = self.kl_basis - perturb
-        return perturb
+        #perturb = 1/np.sqrt(self.evals)[:,None] *np.dot(self.evecs.T, self.flat_cube_region[img_index])
+        remove = (self.evecs[img_index]*np.tile(self.flat_cube_region[img_index], (self.evecs[img_index].shape[0],1)).T).T
+        partial_basis = self.kl_basis - remove
+        return partial_basis
 
     #####################################
     ### Wrappers for module functions ###
