@@ -198,7 +198,7 @@ class ReferenceCube(object):
 
                 
 
-    # Forward modeling and Matched Filter
+    # KL basis components 
     @property
     def evals(self):
         """
@@ -217,7 +217,7 @@ class ReferenceCube(object):
         return self._evecs
     @evecs.setter
     def evecs(self, newval):
-        self._evals = newval
+        self._evecs = newval
         
     @property
     def kl_basis(self):
@@ -225,7 +225,18 @@ class ReferenceCube(object):
     @kl_basis.setter
     def kl_basis(self, newval):
         self._kl_basis = newval
-    
+
+    @property
+    def kl_basis_mod(self):
+        """
+        modified KL basis
+        """
+        return self.kl_basis_mod
+    @kl_basis_mod.setter
+    def kl_basis_mod(self, newval):
+        self._kl_basis_mod = newval
+
+    # Forward modeling and Matched Filter
     @property
     def matched_filter(self):
         # Npix x (Nx x Ny) datacube of matched filters for each position
