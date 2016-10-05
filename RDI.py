@@ -784,7 +784,62 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
     return np.squeeze(row), np.squeeze(col)
 
 
-def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_subtract=False):
+def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=False):
+    """
+    If you already have the KL basis, do the klip subtraction
+    Arguments:
+      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
+      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
+      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
+          If None, use full basis
+      double_project: apply KL twice (useful for some FMMF cases)
+    Return:
+      kl_sub: array with same shape as input image, after KL PSF subtraction, KL index is the first axis
+    """
+    """
+    New idea: take arbitrary input shape where the last axes is the pixels, turn it into 
+    Nwhatever x Npix, do KLIP, and then return 
+    """
+    orig_shape = np.copy(img_flat.shape)
+    # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
+    if img_flat.ndim == 1:
+        # add an empty axis to the front
+        img_flat = np.expand_dims(img_flat, 0)
+    if img_flat.ndim > 2:
+        flat_shape = (reduce(lambda x,y: x*y, orig_shape[:-1]), orig_shape[-1])
+        img_flat = img_flat.reshape(flat_shape)    
+    kl_basis = np.asarray(kl_basis)
+    img_flat_mean_sub = img_flat - np.nanmean(img_flat, axis=-1, keepdims=True)
+
+    # make sure n_bases is iterable
+    if n_bases is None:
+        n_bases = [len(kl_basis)]
+    if hasattr(n_bases, '__iter__') is False:
+        n_bases = [n_bases]
+
+
+    # project the image onto the PSF basis
+    psf_projection = np.array([np.dot(np.dot(img_flat_mean_sub, kl_basis[:n_bases[i]].T),
+                                      kl_basis[:n_bases[i]])
+                               for i in range(len(n_bases))])
+    # subtract the projection from the image
+    kl_sub = img_flat_mean_sub - psf_projection
+
+    # project twice for faster forward modeling, if desired
+    if double_project is True:
+        # do mean subtraction again
+        kl_sub -= np.nanmean(kl_sub, axis=-1, keepdims=True)
+        # project again onto the subtracted image, and re-subtract
+        kl_sub -= np.array([np.dot(np.dot(kl_sub[i], kl_basis[:n_bases[i]].T),
+                                   kl_basis[:n_bases[i]])
+                            for i in range(len(n_bases))])
+        
+    # put KL axis in front of other axes and reshape the return value
+    new_shape = [len(n_bases)] + [i for i in orig_shape]
+    kl_sub = np.reshape(kl_sub, new_shape)
+    return np.squeeze(kl_sub)
+
+def klip_subtract_with_basis_old(img_flat, kl_basis, n_bases=None, double_subtract=False):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
@@ -794,12 +849,20 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_subtract=F
           If None, use full basis
       double_subtract: apply KL twice (useful for some FMMF cases)
     Return:
-      subtracted_img: array with same shape as input image, after KL PSF subtraction
+      kl_sub: array with same shape as input image, after KL PSF subtraction, KL index is the first axis
     """
+    """
+    New idea: take arbitrary input shape where the last axes is the pixels, turn it into 
+    Nwhatever x Npix, do KLIP, and then return 
+    """
+    orig_shape = np.copy(img_flat.shape)
     # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
     if img_flat.ndim == 1:
+        # add an empty axis to the front
         img_flat = np.expand_dims(img_flat, 0)
-        
+    if img_flat.ndim > 2:
+        flat_shape = (reduce(lambda x,y: x*y, orig_shape[:-1]), orig_shape[-1])
+        img_flat = img_flat.reshape(flat_shape)    
     kl_basis = np.asarray(kl_basis)
     img_flat_mean_sub = img_flat - np.expand_dims(np.nanmean(img_flat, axis=-1),-1)
 
@@ -817,6 +880,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_subtract=F
                                                    axis=-1) * kl_basis[:Kmax],
                                     axis=1)
                           for Kmax in n_bases])
+    
     kl_sub = img_flat_mean_sub - psf_model
     # DOUBLE_SUBTRACT DOES NOT WORK YET
     kl_doublesub = np.zeros_like(kl_sub)
@@ -834,6 +898,8 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_subtract=F
         #    print(tmp.shape)
         #    kl_sub[i] = tmp
         return np.squeeze(kl_doublesub)
+    new_shape = [len(n_bases)] + [i for i in orig_shape]
+    kl_sub = kl_sub.reshape(new_shape)
     return np.squeeze(np.array(kl_sub))
 
     
@@ -1102,9 +1168,9 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     if image.ndim == 2:
         image = image.ravel()
         image = np.expand_dims(image,0)
-    elif image.ndim == 3:
+    elif image.ndim >= 3:
         image = flatten_image_axes(image)
-
+    
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     nanpix_img = np.where(np.isnan(image))
     nanpix_mf = np.where(np.isnan(matched_filter))
@@ -1130,7 +1196,10 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
-                           
+
+####################
+### Array Shapes ###
+####################
 def flatten_image_axes(array):
     """
     returns the array with the final two axes - assumed to be the image pixels - flattened
@@ -1142,6 +1211,22 @@ def flatten_image_axes(array):
     newshape += [reduce(lambda x,y: x*y, shape[-2:])]
     return array.reshape(newshape)
 
+def flatten_leading_axes(array, axis=-1):
+    """
+    For an array of flattened images of with N axes where the first N-1 axes
+    index parameters (or whatever else), return an array with the first N-1 axes flattened
+    so the final result is 2-D, with the last axis being the pixel axis
+    Args:
+        array: an array of at least 2 dimensions
+        axis [-1]: preserves shape up to this axis (e.g. -1 for last axis, -2 for last two axes)
+    """
+    # test axis value is valid
+    if np.abs(axis) >= array.ndim:
+        print("Preserving all axes shapes")
+        return array
+    oldshape = array.shape
+    newshape = [reduce(lambda x,y: x*y, oldshape[:axis])] + list(oldshape[axis:])
+    return np.reshape(array, newshape)
 
 ################
 ### KL BASIS ###
