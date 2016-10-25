@@ -336,7 +336,7 @@ class ReferenceCube(object):
         return covar_matrix[np.meshgrid(indices, indices)].copy()
 
 
-    def get_partial_kl_basis(self, img_index):
+    def remove_ref_from_kl_basis(self, img_index):
         """
         Compute in an efficient way the KL basis when you drop one image
         from the set of references
@@ -1196,17 +1196,14 @@ def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=
     # generate the covariance matrix
     if kl_max is None:
         kl_max = nrefs-1
-    covar = np.cov(ref_psfs_mean_sub)#, ddof=1) # use ddof to get an unnormalized cov matrix
+    covar = np.cov(ref_psfs_mean_sub) * (npix-1) # undo numpy's normalization
     evals, evecs = la.eigh(covar, eigvals=(0,kl_max-1))
-    # normalize the eigenvalues
-    evals /= npix-1.
     
     # reverse the evals and evecs to have the biggest first
     evals = np.copy(evals[::-1])
     evecs = np.copy(evecs[:,::-1], order='F')
     
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
-    kl_basis = kl_basis / np.sqrt(evals)
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T / np.sqrt(evals[:,None])
     check_nans = np.any(evals <= 0)
     if check_nans:
         neg_evals = (np.where(evals <= 0))[0]
@@ -1224,3 +1221,28 @@ def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=
     if len(return_objs) == 1:
         return_objs = return_objs[0]
     return return_objs
+
+
+def remove_ref_from_kl_basis(references, ref_index, kl_basis=None, evecs=None, evals=None):
+    """
+    Subtract the contribution of a reference PSF from the KL basis
+    Args:
+        references: set of reference images Nref x Npix (i.e. flattened)
+        ref_index: index of the ref image to remove from the basis
+        kl_basis [None]: the full kl basis Nref x Npix
+        evecs [None]: eigenvectors of the covariance matrix
+        evals [None]: eigenvalues of the covariance matrix
+        If kl_basis, evecs, and evals are None, regenerate them
+    Returns:
+        new_basis: KL basis with the contributions from one image removed
+    """
+    if np.any([i is None for i in [kl_basis, evecs, evals]]):
+        kl_basis, evecs, evals = generate_kl_basis(references,
+                                                   return_evecs=True,
+                                                   return_evals=True)
+    refs_mean_sub = references - np.mean(references, axis=-1)[:,None]
+    n_modes = len(evals)
+    weights = evecs[ref_index,:]/np.sqrt(evals)
+    contributions = weights[:,None] * refs_mean_sub
+    new_basis = kl_basis - contributions
+    return new_basis
