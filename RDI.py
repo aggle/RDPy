@@ -843,68 +843,6 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     kl_sub = np.reshape(kl_sub, new_shape)
     return np.squeeze(kl_sub)
 
-def klip_subtract_with_basis_old(img_flat, kl_basis, n_bases=None, double_subtract=False):
-    """
-    If you already have the KL basis, do the klip subtraction
-    Arguments:
-      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
-      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
-      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
-          If None, use full basis
-      double_subtract: apply KL twice (useful for some FMMF cases)
-    Return:
-      kl_sub: array with same shape as input image, after KL PSF subtraction, KL index is the first axis
-    """
-    """
-    New idea: take arbitrary input shape where the last axes is the pixels, turn it into 
-    Nwhatever x Npix, do KLIP, and then return 
-    """
-    orig_shape = np.copy(img_flat.shape)
-    # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
-    if img_flat.ndim == 1:
-        # add an empty axis to the front
-        img_flat = np.expand_dims(img_flat, 0)
-    if img_flat.ndim > 2:
-        flat_shape = (reduce(lambda x,y: x*y, orig_shape[:-1]), orig_shape[-1])
-        img_flat = img_flat.reshape(flat_shape)    
-    kl_basis = np.asarray(kl_basis)
-    img_flat_mean_sub = img_flat - np.expand_dims(np.nanmean(img_flat, axis=-1),-1)
-
-    # make sure n_bases is iterable
-    if n_bases is None:
-        n_bases = [len(kl_basis)]
-    if hasattr(n_bases, '__iter__') is False:
-        n_bases = [n_bases]
-
-    #kl_sub = np.array([img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k
-    #                                                  for k in kl_basis[:Kmax]], axis=0)
-    #                   for Kmax in n_bases])
-    psf_model = np.array([np.nansum(np.expand_dims(np.dot(img_flat_mean_sub,
-                                                          kl_basis[:Kmax].T),
-                                                   axis=-1) * kl_basis[:Kmax],
-                                    axis=1)
-                          for Kmax in n_bases])
-    
-    kl_sub = img_flat_mean_sub - psf_model
-    # DOUBLE_SUBTRACT DOES NOT WORK YET
-    kl_doublesub = np.zeros_like(kl_sub)
-    if double_subtract is True:
-        kl_doublesub = np.array([np.nansum(np.expand_dims(np.dot(kl_sub[i],
-                                                           kl_basis[:n_bases[i]].T),
-                                                    axis=-1) * kl_basis[:n_bases[i]],
-                                     axis=1)
-                           for i in range(len(n_bases))])
-        #for i,k in enumerate(kl_sub): # i indices the number of KL modes
-        #    tmp = np.nansum(np.expand_dims(np.dot(k - np.nanmean(k),
-        #                                          kl_basis[:n_bases[i]].T),
-        #                                          axis=-1) * kl_basis[:n_bases[i]],
-        #                           axis=1)
-        #    print(tmp.shape)
-        #    kl_sub[i] = tmp
-        return np.squeeze(kl_doublesub)
-    new_shape = [len(n_bases)] + [i for i in orig_shape]
-    kl_sub = kl_sub.reshape(new_shape)
-    return np.squeeze(np.array(kl_sub))
 
     
 
