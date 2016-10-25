@@ -746,7 +746,7 @@ def image_2_seppa(coord, orientation=0, center=(40,40), pix_scale = 75):
     return (np.squeeze(sep), np.squeeze(pa))
 
 def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
-                  return_raveled=False, shape=None):
+                  shape=None, return_raveled=False, return_int=True):
     """
     convert from separation and position angle to image coordinates
     Arguments:
@@ -755,9 +755,12 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
       orientation: clockwise angle between y in image and north
       center: ([40,40]) row, col image center
       pix_scale: 75 mas/pix for nicmos
-      return_raveled: [True] instead of row,col coord, return the coordinate for a linearized array. 
-        If True, you must also provide the image shape
-    shape: (nrow, ncol) tuple of the image shape
+      shape: (nrow, ncol) tuple of the image shape
+      return_raveled: [True] instead of row,col coordinates, return the 
+        coordinate for a linearized array. If True, you must also provide 
+        the image shape
+      return_int: [True] return pixel coordinates to the nearest integer.
+        if False get back decimal pixel coordinates
     Returns:
         Nearest integer of the coordinate, either 1-D or 2-D depending on value of return_raveled
     """
@@ -776,8 +779,9 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
     
     row = sep*np.cos(tot_ang)/pix_scale + center[0]
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
-    row, col = (np.array(np.round(row),dtype=np.int),
-                np.array(np.round(col), dtype=np.int))
+    if return_int is True:
+        row, col = (np.array(np.round(row),dtype=np.int),
+                    np.array(np.round(col), dtype=np.int))
     if return_raveled is True:
         ind = np.ravel_multi_index((row, col), shape, mode='clip')
         return ind
