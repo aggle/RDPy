@@ -52,10 +52,16 @@ class ReferenceCube(object):
         # matched filter
         self.matched_filter = None
         self.matched_filter_locations = None
+        # KL stuff
+        self.kl_basis = None
+        self.evecs = None
+        self.evals = None
 
     ###############################
     # Instantiate required fields #
     ###############################
+
+    ##################
     # basic cube properties
     @property
     def cube(self):
@@ -86,9 +92,10 @@ class ReferenceCube(object):
     @reference_indices.setter
     def reference_indices(self, newval):
         self._reference_indices = list(newval)
-
+    ##################
 
     ##################
+
     # target image
     @property
     def target(self):
@@ -107,10 +114,17 @@ class ReferenceCube(object):
         except AttributeError:
             self._target = None
             return
-
+        # when you change the target:
+        # 1. update the region
+        # 2. update the cube order
+        try:
+            self.target_region = self._target[self.flat_region_ind]
+        except AttributeError:
+            self.target_region = self.target[:]
         new_cube_order = sort_squared_distance(self._target, self.cube)
         self.cube = self.cube[new_cube_order]
         self.reference_indices = new_cube_order
+        
     @property
     def target_region(self):
         """
@@ -148,7 +162,6 @@ class ReferenceCube(object):
             self.target_region = self.target[self.flat_region_ind].copy()
         # for some reason, whether you work on a copy or a view affects the answer
         self.npix_region = np.size(newval)
-    
 
     @property
     def npix_region(self):
@@ -182,6 +195,7 @@ class ReferenceCube(object):
         self.covar_matrix = self.calc_covariance_matrix(self._flat_cube_region)
     ##################
         
+    ##################
     # derived attributes
     @property
     def covar_matrix(self):
@@ -196,8 +210,7 @@ class ReferenceCube(object):
     def corr_matrix(self, newcm):
         return self._corr_matrix
 
-                
-
+    ##################
     # KL basis components 
     @property
     def evals(self):
@@ -221,20 +234,23 @@ class ReferenceCube(object):
         
     @property
     def kl_basis(self):
+        """
+        The KL basis that is used for PSF subtraction
+        """
         return self._kl_basis
     @kl_basis.setter
     def kl_basis(self, newval):
         self._kl_basis = newval
-
+        
     @property
-    def kl_basis_mod(self):
+    def full_kl_basis(self):
         """
-        modified KL basis
+        KL basis corresponding to the full reference cube
         """
-        return self.kl_basis_mod
-    @kl_basis_mod.setter
-    def kl_basis_mod(self, newval):
-        self._kl_basis_mod = newval
+        return self._full_kl_basis
+    @full_kl_basis.setter
+    def full_kl_basis(self, newval):
+        self._full_kl_basis = newval
 
     # Forward modeling and Matched Filter
     @property
@@ -335,33 +351,64 @@ class ReferenceCube(object):
             covar_matrix = self.covar_matrix
         return covar_matrix[np.meshgrid(indices, indices)].copy()
 
-
-    def remove_ref_from_kl_basis(self, img_index):
-        """
-        Compute in an efficient way the KL basis when you drop one image
-        from the set of references
-        Args:
-            img_index: index of the image being removed from the KL basis
-        Returns:
-            partial_basis: KL basis with one fewer image in the references
-        """
-        #eval = self.eval[img_index]
-        # extend this over the whole basis
-        #perturb = 1/np.sqrt(self.evals)[:,None] *np.dot(self.evecs.T, self.flat_cube_region[img_index])
-        remove = (self.evecs[img_index]*np.tile(self.flat_cube_region[img_index], (self.evecs[img_index].shape[0],1)).T).T
-        partial_basis = self.kl_basis - remove
-        return partial_basis
-
     #####################################
     ### Wrappers for module functions ###
     #####################################
+    def klip_subtract_with_basis(self, **kwargs):
+        """
+        This is a wrapper for RDI.klip_subtract_with_basis that defaults to the
+        reference cube properties as arguments
+        Useage:
+        {0}
+        """.format(klip_subtract_with_basis.__doc__)
+        argdict={}
+        argdict['img_flat'] =  kwargs.get('img_flat', getattr(self,'target_region'))
+        argdict['kl_basis'] =  kwargs.get('kl_basis', getattr(self,'kl_basis'))
+        argdict['n_bases'] =  kwargs.get('n_bases', len(getattr(self,'kl_basis')))
+        argdict['double_project']= kwargs.get('double_project', False)
+        vals = klip_subtract_with_basis(argdict['img_flat'],
+                                        argdict['kl_basis'],
+                                        argdict['n_bases'],
+                                        argdict['double_project'])
+        return vals
+    
+    def generate_kl_basis(self, **kwargs):
+        """
+        This is a wrapper for RDI.generate_kl_basis that defaults to the
+        reference cube properties as arguments
+        Useage:
+        {0}
+        """.format(generate_kl_basis.__doc__)
+        argdict={}
+        argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
+        argdict['kl_max'] = kwargs.get('kl_max', len(argdict['references']))
+        argdict['return_evecs'] = kwargs.get('return_evecs', True)
+        argdict['return_evals'] = kwargs.get('return_evals', True)
+        
+        vals = generate_kl_basis(references = argdict['references'],
+                                 kl_max = argdict['kl_max'],
+                                 return_evecs = argdict['return_evecs'],
+                                 return_evals = argdict['return_evals'])
+        return vals
+        
+    def remove_ref_from_kl_basis(self, ref_index, **kwargs):
+        """
+        This is a wrapper for RDI.remove_ref_from_kl_basis that defaults to the
+        reference cube properties as arguments
+        Useage:
+        {0}
+        """.format(remove_ref_from_kl_basis.__doc__)
+        argdict={}
+        argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
+        argdict['kl_basis'] = kwargs.get('kl_basis', getattr(self,'full_kl_basis'))
+        argdict['evecs'] = kwargs.get('evecs', getattr(self,'evecs'))
+        argdict['evals'] = kwargs.get('evals', getattr(self,'evals'))
+
+        new_basis = remove_ref_from_kl_basis(ref_index, **argdict)
+
+        return new_basis
+
     def generate_matched_filter(self, return_mf=False, **kwargs):
-#                                psf = self.instrument.psf,
-#                                kl_basis = self.kl_basis,
-#                                n_bases = self.n_basis,
-#                                imshape = self.imshape,
-#                                region_pix = self.flat_region_ind,
-#                                mf_locations = self.matched_filter_locations):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
         reference cube properties as arguments
@@ -817,7 +864,8 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
 
     # make sure n_bases is iterable
     if n_bases is None:
-        n_bases = [len(kl_basis)]
+        #n_bases = [len(kl_basis)]
+        n_bases = range(len(kl_basis))
     if hasattr(n_bases, '__iter__') is False:
         n_bases = [n_bases]
 
@@ -1173,7 +1221,7 @@ def flatten_leading_axes(array, axis=-1):
 ################
 ### KL BASIS ###
 ################
-def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=False):
+def generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_evals=False):
     """
     Generate the KL basis from a set of reference images. Always returns the full KL basis
     This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
@@ -1223,7 +1271,7 @@ def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=
     return return_objs
 
 
-def remove_ref_from_kl_basis(references, ref_index, kl_basis=None, evecs=None, evals=None):
+def remove_ref_from_kl_basis(ref_index, references, kl_basis=None, evecs=None, evals=None):
     """
     Subtract the contribution of a reference PSF from the KL basis
     Args:
