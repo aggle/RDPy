@@ -879,7 +879,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
 
     # project twice for faster forward modeling, if desired
     if double_project is True:
-        # do mean subtraction again
+        # do mean subtraction again even though it should already be mean 0
         kl_sub -= np.nanmean(kl_sub, axis=-1, keepdims=True)
         # project again onto the subtracted image, and re-subtract
         kl_sub -= np.array([np.dot(np.dot(kl_sub[i], kl_basis[:n_bases[i]].T),
