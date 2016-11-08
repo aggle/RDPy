@@ -52,10 +52,16 @@ class ReferenceCube(object):
         # matched filter
         self.matched_filter = None
         self.matched_filter_locations = None
+        # KL stuff
+        self.kl_basis = None
+        self.evecs = None
+        self.evals = None
 
     ###############################
     # Instantiate required fields #
     ###############################
+
+    ##################
     # basic cube properties
     @property
     def cube(self):
@@ -86,9 +92,10 @@ class ReferenceCube(object):
     @reference_indices.setter
     def reference_indices(self, newval):
         self._reference_indices = list(newval)
-
+    ##################
 
     ##################
+
     # target image
     @property
     def target(self):
@@ -107,11 +114,17 @@ class ReferenceCube(object):
         except AttributeError:
             self._target = None
             return
-
-
+        # when you change the target:
+        # 1. update the region
+        # 2. update the cube order
+        try:
+            self.target_region = self._target[self.flat_region_ind]
+        except AttributeError:
+            self.target_region = self.target[:]
         new_cube_order = sort_squared_distance(self._target, self.cube)
         self.cube = self.cube[new_cube_order]
         self.reference_indices = new_cube_order
+        
     @property
     def target_region(self):
         """
@@ -149,7 +162,6 @@ class ReferenceCube(object):
             self.target_region = self.target[self.flat_region_ind].copy()
         # for some reason, whether you work on a copy or a view affects the answer
         self.npix_region = np.size(newval)
-    
 
     @property
     def npix_region(self):
@@ -183,6 +195,7 @@ class ReferenceCube(object):
         self.covar_matrix = self.calc_covariance_matrix(self._flat_cube_region)
     ##################
         
+    ##################
     # derived attributes
     @property
     def covar_matrix(self):
@@ -197,8 +210,7 @@ class ReferenceCube(object):
     def corr_matrix(self, newcm):
         return self._corr_matrix
 
-                
-
+    ##################
     # KL basis components 
     @property
     def evals(self):
@@ -222,20 +234,23 @@ class ReferenceCube(object):
         
     @property
     def kl_basis(self):
+        """
+        The KL basis that is used for PSF subtraction
+        """
         return self._kl_basis
     @kl_basis.setter
     def kl_basis(self, newval):
         self._kl_basis = newval
-
+        
     @property
-    def kl_basis_mod(self):
+    def full_kl_basis(self):
         """
-        modified KL basis
+        KL basis corresponding to the full reference cube
         """
-        return self.kl_basis_mod
-    @kl_basis_mod.setter
-    def kl_basis_mod(self, newval):
-        self._kl_basis_mod = newval
+        return self._full_kl_basis
+    @full_kl_basis.setter
+    def full_kl_basis(self, newval):
+        self._full_kl_basis = newval
 
     # Forward modeling and Matched Filter
     @property
@@ -336,34 +351,64 @@ class ReferenceCube(object):
             covar_matrix = self.covar_matrix
         return covar_matrix[np.meshgrid(indices, indices)].copy()
 
-
-    def get_partial_kl_basis(self, img_index):
-        """
-        Compute in an efficient way the KL basis when you drop one image
-        from the set of references
-        Args:
-            img_index: index of the image being removed from the KL basis
-        Returns:
-            partial_basis: KL basis with one fewer image in the references
-        """
-        #eval = self.eval[img_index]
-        # extend this over the whole basis
-        #perturb = 1/np.sqrt(self.evals)[:,None] *np.dot(self.evecs.T, self.flat_cube_region[img_index])
-        remove = (self.evecs[img_index] * np.tile(self.flat_cube_region[img_index],
-                                                  (self.evecs[img_index].shape[0],1)).T).T
-        partial_basis = self.kl_basis - remove
-        return partial_basis
-
     #####################################
     ### Wrappers for module functions ###
     #####################################
+    def klip_subtract_with_basis(self, **kwargs):
+        """
+        This is a wrapper for RDI.klip_subtract_with_basis that defaults to the
+        reference cube properties as arguments
+        Useage:
+        {0}
+        """.format(klip_subtract_with_basis.__doc__)
+        argdict={}
+        argdict['img_flat'] =  kwargs.get('img_flat', getattr(self,'target_region'))
+        argdict['kl_basis'] =  kwargs.get('kl_basis', getattr(self,'kl_basis'))
+        argdict['n_bases'] =  kwargs.get('n_bases', len(getattr(self,'kl_basis')))
+        argdict['double_project']= kwargs.get('double_project', False)
+        vals = klip_subtract_with_basis(argdict['img_flat'],
+                                        argdict['kl_basis'],
+                                        argdict['n_bases'],
+                                        argdict['double_project'])
+        return vals
+    
+    def generate_kl_basis(self, **kwargs):
+        """
+        This is a wrapper for RDI.generate_kl_basis that defaults to the
+        reference cube properties as arguments
+        Useage:
+        {0}
+        """.format(generate_kl_basis.__doc__)
+        argdict={}
+        argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
+        argdict['kl_max'] = kwargs.get('kl_max', len(argdict['references']))
+        argdict['return_evecs'] = kwargs.get('return_evecs', True)
+        argdict['return_evals'] = kwargs.get('return_evals', True)
+        
+        vals = generate_kl_basis(references = argdict['references'],
+                                 kl_max = argdict['kl_max'],
+                                 return_evecs = argdict['return_evecs'],
+                                 return_evals = argdict['return_evals'])
+        return vals
+        
+    def remove_ref_from_kl_basis(self, ref_index, **kwargs):
+        """
+        This is a wrapper for RDI.remove_ref_from_kl_basis that defaults to the
+        reference cube properties as arguments
+        Useage:
+        {0}
+        """.format(remove_ref_from_kl_basis.__doc__)
+        argdict={}
+        argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
+        argdict['kl_basis'] = kwargs.get('kl_basis', getattr(self,'full_kl_basis'))
+        argdict['evecs'] = kwargs.get('evecs', getattr(self,'evecs'))
+        argdict['evals'] = kwargs.get('evals', getattr(self,'evals'))
+
+        new_basis = remove_ref_from_kl_basis(ref_index, **argdict)
+
+        return new_basis
+
     def generate_matched_filter(self, return_mf=False, **kwargs):
-#                                psf = self.instrument.psf,
-#                                kl_basis = self.kl_basis,
-#                                n_bases = self.n_basis,
-#                                imshape = self.imshape,
-#                                region_pix = self.flat_region_ind,
-#                                mf_locations = self.matched_filter_locations):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
         reference cube properties as arguments
@@ -833,7 +878,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
 
     # project twice for faster forward modeling, if desired
     if double_project is True:
-        # do mean subtraction again
+        # do mean subtraction again even though it should already be mean 0
         kl_sub -= np.nanmean(kl_sub, axis=-1, keepdims=True)
         # project again onto the subtracted image, and re-subtract
         kl_sub -= np.array([np.dot(np.dot(kl_sub[i], kl_basis[:n_bases[i]].T),
@@ -845,68 +890,6 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     kl_sub = np.reshape(kl_sub, new_shape)
     return np.squeeze(kl_sub)
 
-def klip_subtract_with_basis_old(img_flat, kl_basis, n_bases=None, double_subtract=False):
-    """
-    If you already have the KL basis, do the klip subtraction
-    Arguments:
-      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
-      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
-      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
-          If None, use full basis
-      double_subtract: apply KL twice (useful for some FMMF cases)
-    Return:
-      kl_sub: array with same shape as input image, after KL PSF subtraction, KL index is the first axis
-    """
-    """
-    New idea: take arbitrary input shape where the last axes is the pixels, turn it into 
-    Nwhatever x Npix, do KLIP, and then return 
-    """
-    orig_shape = np.copy(img_flat.shape)
-    # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
-    if img_flat.ndim == 1:
-        # add an empty axis to the front
-        img_flat = np.expand_dims(img_flat, 0)
-    if img_flat.ndim > 2:
-        flat_shape = (reduce(lambda x,y: x*y, orig_shape[:-1]), orig_shape[-1])
-        img_flat = img_flat.reshape(flat_shape)    
-    kl_basis = np.asarray(kl_basis)
-    img_flat_mean_sub = img_flat - np.expand_dims(np.nanmean(img_flat, axis=-1),-1)
-
-    # make sure n_bases is iterable
-    if n_bases is None:
-        n_bases = [len(kl_basis)]
-    if hasattr(n_bases, '__iter__') is False:
-        n_bases = [n_bases]
-
-    #kl_sub = np.array([img_flat_mean_sub - np.nansum([np.dot(img_flat_mean_sub, k)*k
-    #                                                  for k in kl_basis[:Kmax]], axis=0)
-    #                   for Kmax in n_bases])
-    psf_model = np.array([np.nansum(np.expand_dims(np.dot(img_flat_mean_sub,
-                                                          kl_basis[:Kmax].T),
-                                                   axis=-1) * kl_basis[:Kmax],
-                                    axis=1)
-                          for Kmax in n_bases])
-    
-    kl_sub = img_flat_mean_sub - psf_model
-    # DOUBLE_SUBTRACT DOES NOT WORK YET
-    kl_doublesub = np.zeros_like(kl_sub)
-    if double_subtract is True:
-        kl_doublesub = np.array([np.nansum(np.expand_dims(np.dot(kl_sub[i],
-                                                           kl_basis[:n_bases[i]].T),
-                                                    axis=-1) * kl_basis[:n_bases[i]],
-                                     axis=1)
-                           for i in range(len(n_bases))])
-        #for i,k in enumerate(kl_sub): # i indices the number of KL modes
-        #    tmp = np.nansum(np.expand_dims(np.dot(k - np.nanmean(k),
-        #                                          kl_basis[:n_bases[i]].T),
-        #                                          axis=-1) * kl_basis[:n_bases[i]],
-        #                           axis=1)
-        #    print(tmp.shape)
-        #    kl_sub[i] = tmp
-        return np.squeeze(kl_doublesub)
-    new_shape = [len(n_bases)] + [i for i in orig_shape]
-    kl_sub = kl_sub.reshape(new_shape)
-    return np.squeeze(np.array(kl_sub))
 
     
 
@@ -1262,7 +1245,7 @@ def flatten_leading_axes(array, axis=-1):
 ################
 ### KL BASIS ###
 ################
-def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=False):
+def generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_evals=False):
     """
     Generate the KL basis from a set of reference images. Always returns the full KL basis
     This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
@@ -1285,17 +1268,14 @@ def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=
     # generate the covariance matrix
     if kl_max is None:
         kl_max = nrefs-1
-    covar = np.cov(ref_psfs_mean_sub)#, ddof=1) # use ddof to get an unnormalized cov matrix
+    covar = np.cov(ref_psfs_mean_sub) * (npix-1) # undo numpy's normalization
     evals, evecs = la.eigh(covar, eigvals=(0,kl_max-1))
-    # normalize the eigenvalues
-    evals /= npix-1.
     
     # reverse the evals and evecs to have the biggest first
     evals = np.copy(evals[::-1])
     evecs = np.copy(evecs[:,::-1], order='F')
     
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
-    kl_basis = kl_basis / np.sqrt(evals)
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T / np.sqrt(evals[:,None])
     check_nans = np.any(evals <= 0)
     if check_nans:
         neg_evals = (np.where(evals <= 0))[0]
@@ -1313,3 +1293,28 @@ def generate_kl_basis(references, kl_max=None, return_evecs=False, return_evals=
     if len(return_objs) == 1:
         return_objs = return_objs[0]
     return return_objs
+
+
+def remove_ref_from_kl_basis(ref_index, references, kl_basis=None, evecs=None, evals=None):
+    """
+    Subtract the contribution of a reference PSF from the KL basis
+    Args:
+        references: set of reference images Nref x Npix (i.e. flattened)
+        ref_index: index of the ref image to remove from the basis
+        kl_basis [None]: the full kl basis Nref x Npix
+        evecs [None]: eigenvectors of the covariance matrix
+        evals [None]: eigenvalues of the covariance matrix
+        If kl_basis, evecs, and evals are None, regenerate them
+    Returns:
+        new_basis: KL basis with the contributions from one image removed
+    """
+    if np.any([i is None for i in [kl_basis, evecs, evals]]):
+        kl_basis, evecs, evals = generate_kl_basis(references,
+                                                   return_evecs=True,
+                                                   return_evals=True)
+    refs_mean_sub = references - np.mean(references, axis=-1)[:,None]
+    n_modes = len(evals)
+    weights = evecs[ref_index,:]/np.sqrt(evals)
+    contributions = weights[:,None] * refs_mean_sub
+    new_basis = kl_basis - contributions
+    return new_basis
