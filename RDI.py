@@ -108,6 +108,7 @@ class ReferenceCube(object):
             self._target = None
             return
 
+
         new_cube_order = sort_squared_distance(self._target, self.cube)
         self.cube = self.cube[new_cube_order]
         self.reference_indices = new_cube_order
@@ -253,7 +254,7 @@ class ReferenceCube(object):
     def matched_filter_locations(self):
         """
         Array that tells you what pixels the matched filter slices correspond to
-        If not given, 
+        If not given, assume all locations in image 
         """
         return self._matched_filter_locations
     @matched_filter_locations.setter
@@ -348,7 +349,8 @@ class ReferenceCube(object):
         #eval = self.eval[img_index]
         # extend this over the whole basis
         #perturb = 1/np.sqrt(self.evals)[:,None] *np.dot(self.evecs.T, self.flat_cube_region[img_index])
-        remove = (self.evecs[img_index]*np.tile(self.flat_cube_region[img_index], (self.evecs[img_index].shape[0],1)).T).T
+        remove = (self.evecs[img_index] * np.tile(self.flat_cube_region[img_index],
+                                                  (self.evecs[img_index].shape[0],1)).T).T
         partial_basis = self.kl_basis - remove
         return partial_basis
 
@@ -746,7 +748,7 @@ def image_2_seppa(coord, orientation=0, center=(40,40), pix_scale = 75):
     return (np.squeeze(sep), np.squeeze(pa))
 
 def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
-                  return_raveled=False, shape=None):
+                  shape=None, return_raveled=False, return_int=True):
     """
     convert from separation and position angle to image coordinates
     Arguments:
@@ -755,9 +757,12 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
       orientation: clockwise angle between y in image and north
       center: ([40,40]) row, col image center
       pix_scale: 75 mas/pix for nicmos
-      return_raveled: [True] instead of row,col coord, return the coordinate for a linearized array. 
-        If True, you must also provide the image shape
-    shape: (nrow, ncol) tuple of the image shape
+      shape: (nrow, ncol) tuple of the image shape
+      return_raveled: [True] instead of row,col coordinates, return the 
+        coordinate for a linearized array. If True, you must also provide 
+        the image shape
+      return_int: [True] return pixel coordinates to the nearest integer.
+        if False get back decimal pixel coordinates
     Returns:
         Nearest integer of the coordinate, either 1-D or 2-D depending on value of return_raveled
     """
@@ -776,8 +781,9 @@ def seppa_2_image(sep, pa, orientation=0, center=(40,40), pix_scale = 75,
     
     row = sep*np.cos(tot_ang)/pix_scale + center[0]
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
-    row, col = (np.array(np.round(row),dtype=np.int),
-                np.array(np.round(col), dtype=np.int))
+    if return_int is True:
+        row, col = (np.array(np.round(row),dtype=np.int),
+                    np.array(np.round(col), dtype=np.int))
     if return_raveled is True:
         ind = np.ravel_multi_index((row, col), shape, mode='clip')
         return ind
@@ -813,7 +819,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
 
     # make sure n_bases is iterable
     if n_bases is None:
-        n_bases = [len(kl_basis)]
+        n_bases = [len(kl_basis)+1]
     if hasattr(n_bases, '__iter__') is False:
         n_bases = [n_bases]
 
@@ -953,85 +959,44 @@ def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
     """
     Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
     Arguments:
+        psfs: the flattened model psfs (Nloc, Region_pix)
+        kl_basis: the KL basis for projection (KLmax, Region_pix)
+        n_bases [None]: list of KL_max values
+    returns:
+        [(n_basis x) 1] throughput correction, per KLmax per location
+    """
+    if n_bases is None:
+        n_bases = [len(kl_basis)]
+    orig_shape = list(psfs.shape)
+    psfs = flatten_leading_axes(psfs)
+
+    psf_norm  = np.nansum(psfs, axis=-1)**2
+    oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
+    
+    missing_flux = psf_norm - oversub
+    return missing_flux.reshape([len(n_bases)] + orig_shape[:-1])
+    
+#############
+# DEPRACATED
+def fmmf_throughput_correction_old(psfs, kl_basis, n_bases=None):
+    """
+    Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
+    Arguments:
         psfs: the flattened psf models
         kl_basis: the KL basis for projection
         n_bases [None]: list of KL_max values
     returns:
-        [(n_basis x) 1] throughput correction
+        [(n_basis x) Npsfs] throughput correction
     """
     if n_bases is None:
         n_bases = [len(kl_basis)]
 
     mf_norm_1 = np.linalg.norm(psfs, axis=-1)**2
-    mf_norm_2 = np.array([np.nansum([np.dot(psfs, k)**2 for k in kl_basis[:n]], axis=0)[0]
+    mf_norm_2 = np.array([np.nansum([np.dot(psfs, k)**2 for k in kl_basis[:n]], axis=0)[0] # [0] is WRONG 11/8/2016
                            for n in n_bases])
     mf_norm = np.array([mf_norm_1 - mfn2 for mfn2 in mf_norm_2])
     return mf_norm
-
-# DEPRECATED
-def generate_matched_filter_old(psf, kl_basis=None, n_basis = None,
-                                imshape=None, region_pix=None, mf_locations=None):
-    """
-    # DEPRECATED - get rid of this function once the new generate_matched_filter() is 
-                   confirmed to work
-    generate a matched filter with a model of the PSF. For now we assume that 
-    the KL basis covers the entire image.
-    You can pass a ReferenceCube objects that has all the required arguments as attributes
-    Arguments:
-        psf: square postage stamp of the PSF
-        kl_basis [None]: karhunen-loeve basis for PC projection
-        n_basis [None]: list of number of KL modes to use. Default: all (None defaults to all)
-        imshape [None]: Nrows x Ncols
-        region_pix: the raveled image pixel indices covered by the KL basis. 
-            if None, assumed to cover the whole image
-        mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
-    Returns:
-        MF: cube of flattened matched filters. The first index tells you what pixel in the
-            image it corresponds to, through np.unravel_index(i, imshape)
-            if mf_pix is given, it will be 0 except for the slices corresponding to mf_pix
-            (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
-    """
-    # if mf_locations is not set, assume you want a MF at every pixel in the image
-    if mf_locations is None:
-        mf_locations = list(range(imshape[0]*imshape[1]))
-    if np.ndim(mf_locations) == 0:
-        mf_locations = [mf_locations]
-    # if region_pix is not set, assume the whole image was used for KLIP
-    if region_pix is None:
-        region_pix = list(range(imshape[0]*imshape[1]))
-    
-    mf_template_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
-    mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
-
-    # inject the instrument PSFs - this cannot be done on a flattened cube
-    # only inject PSFs at the specified positions
-    for i, p in enumerate(mf_locations):
-        center = np.unravel_index(p, imshape) # injection location
-        mf_template_cube[i] = inject_psf(np.zeros(imshape), psf, center)
-        mf_pickout_cube[i]  = inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
-    # flatten all the MF images
-    mf_flat_template = np.array([i.ravel() for i in mf_template_cube])
-    mf_flat_pickout =  np.array([i.ravel() for i in mf_pickout_cube])
-    # find the klip-modified PSFs
-    mf_flat_template_klipped = np.zeros_like(mf_flat_template)
-
-    # npix is used to index the locations to apply the MF
-    npix = list(range(len(mf_locations)))
-
-    # when you apply KLIP, be careful only to use the selected region of the image
-    # this can be parallelized but uses a lot of memory! 
-    for i in npix:
-        template = mf_flat_template[i][region_pix]
-        mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template,
-                                                                           kl_basis[:n_basis])
-    # leave only the region of interest in the images
-    mf_flat_template_klipped *= mf_flat_pickout
-    # throughput normalization
-    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
-                                              kl_basis[:n_basis])
-    MF = mf_flat_template_klipped/mf_norm_flat[:,None]
-    return MF
-
+#############
 
 def generate_matched_filter(psf, kl_basis=None, n_bases=None,
                             imshape=None, region_pix=None, mf_locations=None):
@@ -1106,6 +1071,72 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
                                               kl_basis, n_bases)
     MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
     return np.rollaxis(MF,0,2) # put the locations axis first 
+
+#############    
+# DEPRECATED
+def generate_matched_filter_old(psf, kl_basis=None, n_basis = None,
+                                imshape=None, region_pix=None, mf_locations=None):
+    """
+    # DEPRECATED - get rid of this function once the new generate_matched_filter() is 
+                   confirmed to work
+    generate a matched filter with a model of the PSF. For now we assume that 
+    the KL basis covers the entire image.
+    You can pass a ReferenceCube objects that has all the required arguments as attributes
+    Arguments:
+        psf: square postage stamp of the PSF
+        kl_basis [None]: karhunen-loeve basis for PC projection
+        n_basis [None]: list of number of KL modes to use. Default: all (None defaults to all)
+        imshape [None]: Nrows x Ncols
+        region_pix: the raveled image pixel indices covered by the KL basis. 
+            if None, assumed to cover the whole image
+        mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
+    Returns:
+        MF: cube of flattened matched filters. The first index tells you what pixel in the
+            image it corresponds to, through np.unravel_index(i, imshape)
+            if mf_pix is given, it will be 0 except for the slices corresponding to mf_pix
+            (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
+    """
+    # if mf_locations is not set, assume you want a MF at every pixel in the image
+    if mf_locations is None:
+        mf_locations = list(range(imshape[0]*imshape[1]))
+    if np.ndim(mf_locations) == 0:
+        mf_locations = [mf_locations]
+    # if region_pix is not set, assume the whole image was used for KLIP
+    if region_pix is None:
+        region_pix = list(range(imshape[0]*imshape[1]))
+    
+    mf_template_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
+    mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
+
+    # inject the instrument PSFs - this cannot be done on a flattened cube
+    # only inject PSFs at the specified positions
+    for i, p in enumerate(mf_locations):
+        center = np.unravel_index(p, imshape) # injection location
+        mf_template_cube[i] = inject_psf(np.zeros(imshape), psf, center)
+        mf_pickout_cube[i]  = inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
+    # flatten all the MF images
+    mf_flat_template = np.array([i.ravel() for i in mf_template_cube])
+    mf_flat_pickout =  np.array([i.ravel() for i in mf_pickout_cube])
+    # find the klip-modified PSFs
+    mf_flat_template_klipped = np.zeros_like(mf_flat_template)
+
+    # npix is used to index the locations to apply the MF
+    npix = list(range(len(mf_locations)))
+
+    # when you apply KLIP, be careful only to use the selected region of the image
+    # this can be parallelized but uses a lot of memory! 
+    for i in npix:
+        template = mf_flat_template[i][region_pix]
+        mf_flat_template_klipped[i][region_pix] = klip_subtract_with_basis(template,
+                                                                           kl_basis[:n_basis])
+    # leave only the region of interest in the images
+    mf_flat_template_klipped *= mf_flat_pickout
+    # throughput normalization
+    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
+                                              kl_basis[:n_basis])
+    MF = mf_flat_template_klipped/mf_norm_flat[:,None]
+    return MF
+#############
 
 def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=None):
     """
@@ -1197,9 +1228,9 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
 
-####################
-### Array Shapes ###
-####################
+#######################
+### Array Reshaping ###
+#######################
 def flatten_image_axes(array):
     """
     returns the array with the final two axes - assumed to be the image pixels - flattened

@@ -23,7 +23,7 @@ class NICMOS(Instrument):
         self.imshape = np.array([80,80])
         self.center = np.array([40,40])
         self.pix_scale = 75 * units.mas/units.pixel # citation needed
-        self.IWA = 400 * units.mas # citation needed
+        self.IWA = 600 * units.mas # citation needed
         self.IWApix = self.IWA/self.pix_scale
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
 
@@ -45,6 +45,7 @@ class NICMOS(Instrument):
     # IWA and mask
     @property
     def IWA(self):
+        """FPM diameter, in mas"""
         return self._IWA
     @IWA.setter
     def IWA(self, newval):
@@ -52,6 +53,7 @@ class NICMOS(Instrument):
         self.IWApix = self.IWA/self.pix_scale
     @property
     def IWApix(self):
+        """FPM diameter, in pixels"""
         return self._IWApix
     @IWApix.setter
     def IWApix(self, newval):
