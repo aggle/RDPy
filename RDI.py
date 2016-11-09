@@ -459,7 +459,7 @@ class ReferenceCube(object):
                                                #matched_filter,
                                                #matched_filter_locations)
         return mf_map
-    
+
 
 
     
@@ -949,11 +949,11 @@ def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
         [(n_basis x) 1] throughput correction, per KLmax per location
     """
     if n_bases is None:
-        n_bases = [len(kl_basis)]
+        n_bases = [len(kl_basis)+1]
     orig_shape = list(psfs.shape)
     psfs = flatten_leading_axes(psfs)
 
-    psf_norm  = np.nansum(psfs, axis=-1)**2
+    psf_norm  = np.nansum(psfs**2, axis=-1)
     oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
     
     missing_flux = psf_norm - oversub
@@ -1210,6 +1210,22 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
+
+
+def apply_matched_filter_to_images(self, image, matched_filter=None, locations=None):
+    """
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
+    Arguments:
+        image: 2-D image or 3-D array of images
+            the image(s) and the matched filter must have the last two axes aligned
+        matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
+        locations: flattened pixel indices of the pixels to apply the matched filter
+    Returns:
+        mf_map: 2-D image where the matched filter has been applied
+    """
+    pass
+
+
 
 #######################
 ### Array Reshaping ###
