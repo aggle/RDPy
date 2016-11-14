@@ -23,7 +23,7 @@ class NICMOS(Instrument):
         self.imshape = np.array([80,80])
         self.center = np.array([40,40])
         self.pix_scale = 75 * units.mas/units.pixel # citation needed
-        self.IWA = 600 * units.mas # citation needed
+        self.IWA = 6 * units.pixel * self.pix_scale #600 * units.mas # citation needed
         self.IWApix = self.IWA/self.pix_scale
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
 

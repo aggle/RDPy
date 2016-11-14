@@ -441,6 +441,8 @@ class ReferenceCube(object):
         else:
             return mf
 
+        
+        
     def apply_matched_filter_to_image(self, image, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
@@ -953,7 +955,8 @@ def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
     orig_shape = list(psfs.shape)
     psfs = flatten_leading_axes(psfs)
 
-    psf_norm  = np.nansum(psfs**2, axis=-1)
+    #psf_norm  = np.nansum(psfs**2, axis=-1)
+    psf_norm = np.linalg.norm(psfs, axis=-1)**2
     oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
     
     missing_flux = psf_norm - oversub
@@ -1196,11 +1199,7 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     if locations is None:
         locations = list(range(im_shape[0]*im_shape[1]))
     # apply matrix multiplication
-    #for i,pix in enumerate(locations):
-    #    mf_map[:,pix] = np.dot(image,matched_filter[i])
-    #print(mf_map[:,locations].shape)
-    
-    #print(np.dot(image, matched_filter.T).shape)
+
     try:
         mf_map[:,locations] = np.array([np.diag(np.dot(mf, image.T)) for mf in matched_filter]).T
     except ValueError:
