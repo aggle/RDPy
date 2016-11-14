@@ -46,3 +46,5 @@ def seppa_2_image(sep, pa, ORIENTAT, center=(40,40), pix_scale = 75):
     row = sep*np.cos(tot_ang)/pix_scale + center[0]
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
     return (row, col)
+
+

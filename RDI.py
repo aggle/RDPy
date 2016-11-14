@@ -1333,3 +1333,37 @@ def remove_ref_from_kl_basis(ref_index, references, kl_basis=None, evecs=None, e
     contributions = weights[:,None] * refs_mean_sub
     new_basis = kl_basis - contributions
     return new_basis
+
+############################
+# REFERENCE CUBE ITERATION #
+############################
+def iterate_references(references, n_bases, matched_filter=None, mf_locations=None):
+    """
+    Takes a reference cube and returns an array of the whole klipped thing, and the normalizations
+    """
+    for ind in list(range(len(references))):
+        rc_ref_indices = list(range(len(references))):
+        rc_targ_index = rc_ref_indices.pop(ind)
+        tmp_targ = references[rc_targ_index].copy()
+        references = references[rc_ref_indices]
+        rc = RDI.ReferenceCube(references, target=tmp_targ, region_mask=planet_mask, instrument=NICMOS)
+        ref_klipped_flat, kl_basis, evals, evecs = klip.klip_math(rc.target_region, rc.flat_cube_region, 
+                                                                  numbasis=np.array(n_bases), 
+                                                                  return_basis_and_eig=True)
+        rc.kl_basis = kl_basis
+        rc.n_basis = n_bases
+        
+        ref_klflat = RDI.klip_subtract_with_basis(rc.target_region, rc.kl_basis, 
+                                                  rc.n_basis, double_project=True)
+        ref_klflat_img = RDI.make_image_from_region(ref_klflat, rc.flat_region_ind, rc.imshape)
+        
+        # Set up and apply matched filter
+        rc.matched_filter = master_mf
+        rc.matched_filter_locations = rc.flat_region_ind #[np.ravel_multi_index(planet_pix, rc.imshape)]
+        ref_mf_fluxes.append(rc.apply_matched_filter_to_image(ref_klflat_img))
+        mf_norm = RDI.fmmf_throughput_correction(rc.matched_filter[:,rc.flat_region_ind], 
+                                                 rc.kl_basis, 
+                                                 rc.n_basis)
+        ref_mf_fluxes[-1] = RDI.flatten_image_axes(ref_mf_fluxes[-1])[:,rc.flat_region_ind]/mf_norm
+
+        
