@@ -1169,7 +1169,8 @@ def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=Non
     mf_flat_template *= mf_flat_pickout
     return mf_flat_template
 
-def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
+def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
+                                  throughput_corr=False):
     """
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
@@ -1178,6 +1179,7 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
         locations: flattened pixel indices of the pixels to apply the matched filter
     Returns:
         mf_map: 2-D image where the matched filter has been applied
+        throughput_corr: [False] to apply throughput correction, pass an array of normalization factors that matches the shape of the matched filter
     """
     # get the image into the right shape
     orig_shape = np.copy(image.shape)
@@ -1198,20 +1200,26 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None):
     mf_map = np.zeros_like(image)
     if locations is None:
         locations = list(range(im_shape[0]*im_shape[1]))
+
     # apply matrix multiplication
-
     try:
-        mf_map[:,locations] = np.array([np.diag(np.dot(mf, image.T)) for mf in matched_filter]).T
+        mf_map[...,locations] = np.array([np.diag(np.dot(mf, np.rollaxis(image,-1,-2)))
+                                          for mf in matched_filter]).T
     except ValueError:
-        mf_map[:,locations] = np.array([np.dot(mf, image.T) for mf in matched_filter]).T
-
+        mf_map[...,locations] = np.array([np.dot(mf, np.rollaxis(image,-1,-2))
+                                          for mf in matched_filter]).T
+    
+    # if throughput corrections are provided, apply them to the matched filter results
+    if not isinstance(throughput_corr, bool):
+        mf_map /= throughput_corr
     # put the nans back
     matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
 
 
-def apply_matched_filter_to_images(self, image, matched_filter=None, locations=None):
+def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
+                                   throughput_corr=False):
     """
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
@@ -1221,10 +1229,44 @@ def apply_matched_filter_to_images(self, image, matched_filter=None, locations=N
         locations: flattened pixel indices of the pixels to apply the matched filter
     Returns:
         mf_map: 2-D image where the matched filter has been applied
+        throughput_corr: [False] to apply throughput correction, pass an array of normalization factors that matches the shape of the matched filter
     """
-    pass
+    # get the image into the right shape
+    orig_shape = np.copy(image.shape)
+    im_shape = image.shape[-2:]
+    if image.ndim == 2:
+        image = image.ravel()
+        image = np.expand_dims(image,0)
+    elif image.ndim >= 3:
+        image = flatten_image_axes(image)
+    
+    # numpy cannot handle nan's so set all nan's to 0! the effect is the same
+    nanpix_img = np.where(np.isnan(image))
+    nanpix_mf = np.where(np.isnan(matched_filter))
+    image[nanpix_img] = 0
+    matched_filter[nanpix_mf] = 0
 
+    # instantiate the map
+    #mf_map = np.zeros_like(image)
+    if locations is None:
+        locations = list(range(im_shape[0]*im_shape[1]))
 
+    #try:
+    #    mf_map[...,locations] = np.diag(np.dot(matched_filter, np.rollaxis(image, -1, -2)))
+    #except ValueError:
+    #    mf_map[...,locations] = np.dot(matched_filter, np.rollaxis(image, -1, -2))
+    mf_map = np.dot(matched_filter, np.rollaxis(image, -1, -2)).T
+    # undo the funky linear algebra reshaping
+    mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
+    # if throughput corrections are provided, apply them to the matched filter results
+    if not isinstance(throughput_corr, bool):
+        mf_map /= throughput_corr
+
+    # put the nans back
+    matched_filter[nanpix_mf] = np.nan
+    mf_map[nanpix_img] = np.nan
+
+    return mf_map.reshape(orig_shape)
 
 #######################
 ### Array Reshaping ###
@@ -1342,7 +1384,7 @@ def iterate_references(references, n_bases, matched_filter=None, mf_locations=No
     Takes a reference cube and returns an array of the whole klipped thing, and the normalizations
     """
     for ind in list(range(len(references))):
-        rc_ref_indices = list(range(len(references))):
+        rc_ref_indices = list(range(len(references)))
         rc_targ_index = rc_ref_indices.pop(ind)
         tmp_targ = references[rc_targ_index].copy()
         references = references[rc_ref_indices]
