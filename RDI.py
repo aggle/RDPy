@@ -446,7 +446,8 @@ class ReferenceCube(object):
     def apply_matched_filter_to_image(self, image, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
-        reference cube properties as arguments
+        reference cube properties as arguments. 
+        For additional arguments, see RDI.apply_matched_filter_to_image()
         Args:
             image: 2-D image
         Returns:
@@ -454,12 +455,30 @@ class ReferenceCube(object):
                     at the designated positions
         For more help, see RDI.generate_matched_filter()
         """
-        argdict={}
-        argdict['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
-        argdict['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
-        mf_map = apply_matched_filter_to_image(image, **argdict)
+        #argdict={}
+        #argdict['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
+        #argdict['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
+        kwargs['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
+        kwargs['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
+        mf_map = apply_matched_filter_to_image(image, **kwargs)
                                                #matched_filter,
                                                #matched_filter_locations)
+        return mf_map
+
+    def apply_matched_filter_to_images(self, image, **kwargs):
+        """
+        This is a wrapper for RDI.generate_matched_filter that defaults to the 
+        reference cube properties as arguments. For additional arguments, see RDI.apply_matched_filter_to_images()
+        Args:
+            image: 2-D image or 3-D image cube
+        Returns:
+            mf_map: 2-D image where the matched filter has been applied 
+                    at the designated positions
+        For more help, see RDI.generate_matched_filter()
+        """
+        kwargs['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
+        kwargs['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
+        mf_map = apply_matched_filter_to_images(image, **kwargs)
         return mf_map
 
 
@@ -1219,7 +1238,7 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
 
 
 def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
-                                   throughput_corr=False):
+                                   throughput_corr=False, scale=1):
     """
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
@@ -1227,9 +1246,13 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
             the image(s) and the matched filter must have the last two axes aligned
         matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
         locations: flattened pixel indices of the pixels to apply the matched filter
+        throughput_corr: [False] to apply throughput correction, pass an array of normalization factors 
+            that matches the shape of the matched filter
+        scale: any additional scaling you want to apply to the matched filter
+
     Returns:
-        mf_map: 2-D image where the matched filter has been applied
-        throughput_corr: [False] to apply throughput correction, pass an array of normalization factors that matches the shape of the matched filter
+        mf_map: 2-D image where the matched filter has been applied at each pixel
+ 
     """
     # get the image into the right shape
     orig_shape = np.copy(image.shape)
@@ -1251,17 +1274,14 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
     if locations is None:
         locations = list(range(im_shape[0]*im_shape[1]))
 
-    #try:
-    #    mf_map[...,locations] = np.diag(np.dot(matched_filter, np.rollaxis(image, -1, -2)))
-    #except ValueError:
-    #    mf_map[...,locations] = np.dot(matched_filter, np.rollaxis(image, -1, -2))
     mf_map = np.dot(matched_filter, np.rollaxis(image, -1, -2)).T
     # undo the funky linear algebra reshaping
     mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
     # if throughput corrections are provided, apply them to the matched filter results
     if not isinstance(throughput_corr, bool):
         mf_map /= throughput_corr
-
+    # multiply the remaining scale factors
+    mf_map *= scale
     # put the nans back
     matched_filter[nanpix_mf] = np.nan
     mf_map[nanpix_img] = np.nan

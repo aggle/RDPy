@@ -8,6 +8,9 @@ from astropy import units
 
 from Instrument import Instrument
 
+# unit definitions for flux conversion
+photflam = (units.erg / (units.cm**2 * units.Angstrom * units.count))
+
 class NICMOS(Instrument):
     """
     class defining the properties of the NICMOS instrument
@@ -26,6 +29,23 @@ class NICMOS(Instrument):
         self.IWA = 6 * units.pixel * self.pix_scale #600 * units.mas # citation needed
         self.IWApix = self.IWA/self.pix_scale
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
+
+
+    # photometric conversions
+    def photometric_conversion(self, filt_name):
+        """Photometric conversions for NICMOS filters"""
+        phot_dict = {}
+        phot_dict['F160W'] = {'PHOTFLAM':2.36501e-19,
+                              'PHOTFLAMERR':0.0070,
+                              'PHOTPLAM':16059.9,
+                              'PHOTBW':1177.3,
+                              'PHOTZPT':-21.10,
+                              'PHOTFNU':2.03470e-06,
+                              'PHOTFNUERR':0.0070,
+                              '<F_NU(VEGA)>':1083.9,
+                              'APCOR':1.1877}
+        return phot_dict[filt_name.upper()]
+                                      
 
     # Image stuff
     @property
