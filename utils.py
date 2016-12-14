@@ -4,6 +4,7 @@ Assorted helper functions for RDI stuff with ALICE data
 
 import numpy as np
 from astropy import units
+from functools import reduce
 
 
 ###############
@@ -67,7 +68,7 @@ def rotate_centered_coordinates(coord, angle, center=(40,40)):
     newx = np.dot(rot_mat, coord-center) + center
     return newx[::-1]
 
-def image_2_seppa(coord, ORIENTAT, center=(40,40), pix_scale = 75):
+def image_2_seppa(coord, ORIENTAT=0, center=(40,40), pix_scale = 75):
     """
     convert from image coordinates to sep and pa
     coord: (row, col) coord in image
@@ -78,12 +79,12 @@ def image_2_seppa(coord, ORIENTAT, center=(40,40), pix_scale = 75):
     coord = np.array(coord)
     center = np.array(center)
     centered_coord = coord-center
-    sep = np.linalg.norm(centered_coord)*pix_scale
-    pa = np.arctan(centered_coord[1]/centered_coord[0])*180/np.pi
+    sep = np.linalg.norm(centered_coord, axis=-1)*pix_scale
+    pa = np.arctan2(centered_coord.T[1],centered_coord.T[0])*180/np.pi
     pa -= ORIENTAT
     return (sep, pa)
 
-def seppa_2_image(sep, pa, ORIENTAT, center=(40,40), pix_scale = 75):
+def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
     """
     convert from separation and position angle to image coordiates
     pix_scale: 75 mas/pix for nicmos
@@ -172,3 +173,125 @@ def flatten_leading_axes(array, axis=-1):
     oldshape = array.shape
     newshape = [reduce(lambda x,y: x*y, oldshape[:axis])] + list(oldshape[axis:])
     return np.reshape(array, newshape)
+
+
+#################
+# PSF INJECTION #
+#################
+def inject_psfs(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+    """
+    Inject a PSF into an image at a location given by center. Optional: scale PSF
+    Input:
+        img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
+        psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
+             must have same 1st dimension as img 
+        center: center of the injection in the image (can be more than one location)
+        scale_flux: multiply the PSF by this number. If this is an array,
+             img and psf will be tiled to match its length
+             if scale_flux is None, don't scale psf
+        subtract_mean: (False) mean-subtract before returning
+        return_flat: (False) flatten the array along the pixels axis before returning
+    Returns:
+       injected_img: 2-D image or 3D cube with the injected PSF(s)
+       injection_psf: (if return_psf=True) 2-D normalized PSF full image
+    """
+
+    if np.ndim(center) == 1:
+        injected_psf  = inject_psf(img, psf, center, scale_flux, return_psf, subtract_mean, return_flat)
+    elif np.ndim(center) > 1:
+        injected_psf = np.sum(np.array([inject_psf(img, psf, c, scale_flux, return_psf, subtract_mean, return_flat)
+                                        for c in center]), axis=0)
+    return injected_psf
+    
+def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+    """
+    Inject a PSF into an image at a location given by center. Optional: scale PSF
+    Input:
+        img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
+        psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
+             must have same 1st dimension as img 
+        center: center of the injection in the image
+        scale_flux: multiply the PSF by this number. If this is an array,
+             img and psf will be tiled to match its length
+             if scale_flux is None, don't scale psf
+        subtract_mean: (False) mean-subtract before returning
+        return_flat: (False) flatten the array along the pixels axis before returning
+    Returns:
+       injected_img: 2-D image or 3D cube with the injected PSF(s)
+       injection_psf: (if return_psf=True) 2-D normalized PSF full image
+    """
+    if scale_flux is None:
+        scale_flux = 1
+    scale_flux = np.array(scale_flux)
+    
+    # get the right dimensions
+    img_tiled = np.tile(img, (np.size(scale_flux),1,1))
+    psf_tiled = np.tile(psf, (np.size(scale_flux),1,1))
+
+    # get the injection pixels
+    psf_rad =  np.array([np.int(np.floor(i/2.)) for i in psf.shape[-2:]])
+    injection_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
+    
+    # normalized full-image PSF in case you want it later
+    injection_psf = np.zeros(img.shape)
+    cut_psf = psf[psf_pix[0],psf_pix[1]]
+    injection_psf[injection_pix[0], injection_pix[1]] += cut_psf/np.nansum(psf)
+
+    # add the scaled psfs
+    injection_img = np.zeros(img_tiled.shape)
+    #injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scale_flux).T
+    injection_img[:,injection_pix[0], injection_pix[1]] += psf_tiled*scale_flux[:,None,None]
+    full_injection = injection_img + img_tiled
+    if subtract_mean is True:
+        full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
+        injection_psf = injection_psf - np.nanmean(injection_psf)
+    if return_flat is True:
+        shape = full_injection.shape
+        if full_injection.ndim == 2:
+            full_injection = np.ravel(full_injection)
+        else:
+            full_injection = np.reshape(full_injection, (shape[0],reduce(lambda x,y: x*y, shape[1:])))
+    if return_psf is True:
+        return full_injection, injection_psf
+    return np.squeeze(full_injection)
+
+def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
+    """
+    Inject a flattened psf into a flattened region with some scaling.
+    Input:
+        flat_img: 1-d array of the region of interest
+        flat_psf: 1-d array of the psf in the region at the correct location
+        scaling: (1) multiply the PSF by this number. If this is an array, 
+                 img and psf will be tiled to match its length.
+        subtract_mean: (False) mean-subtract images before returning
+    """
+    scaling = np.array(scaling)
+    # get the right dimensions
+    flat_img_tiled = np.tile(flat_img, (np.size(scaling),1))
+    flat_psf_tiled = np.tile(flat_psf, (np.size(scaling),1))
+
+    # assume the PSF is already properly aligned
+    scaled_psf_tiled = (flat_psf_tiled.T*scaling).T
+    
+    injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
+    if subtract_mean == True:
+        injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
+    return injected_flat_img
+
+def mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1):
+    """
+    flat_img: 2-D image to inject into
+    flat_psf: 2-D psf 
+    """
+    scaling = np.array(scaling)
+    # get the right dimensions
+    flat_img_tiled = np.tile(flat_img, (np.size(scaling),1))
+    flat_psf_tiled = np.tile(flat_psf, (np.size(scaling),1))
+
+    # assume the PSF is already properly aligned
+    scaled_psf_tiled = (flat_psf_tiled.T*scaling).T
+    
+    injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
+    injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
+    return injected_flat_img
+

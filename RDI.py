@@ -17,7 +17,7 @@ from scipy.stats import t
 from functools import reduce
 
 import utils
-import matched_filter as MF
+import MatchedFilter as MF
 
 class ReferenceCube(object):
     """
@@ -53,13 +53,13 @@ class ReferenceCube(object):
         self.target_mean = None
         # reduction region
         self.region = region_mask
-        # matched filter
-        self.matched_filter = None
-        self.matched_filter_locations = None
         # KL stuff
         self.kl_basis = None
         self.evecs = None
         self.evals = None
+        # matched filter
+        self.matched_filter = None
+        self.matched_filter_locations = None
 
     ###############################
     # Instantiate required fields #
@@ -123,11 +123,12 @@ class ReferenceCube(object):
         # 2. update the cube order
         try:
             self.target_region = self._target[self.flat_region_ind]
+            new_cube_order = sort_squared_distance(self._target[self.flat_region_ind],
+                                                   utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
         except AttributeError:
             self.target_region = self.target[:]
+            new_cube_order = sort_squared_distance(self._target, self.cube)
         self.target_mean = np.nanmean(self.target_region)
-        new_cube_order = sort_squared_distance(self._target[self.flat_region_ind],
-                                               utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
         self.cube = self.cube[new_cube_order]
         self.reference_indices = new_cube_order
         
@@ -163,10 +164,15 @@ class ReferenceCube(object):
     def flat_region_ind(self, newval):
         # as soon as you get region indices, pull out the region
         self._flat_region_ind = newval
-        self.flat_cube_region = self.flat_cube[:,self.flat_region_ind].copy()
-        if self.target is not None:
+        try:
+            self.flat_cube_region = self.flat_cube[:,self.flat_region_ind].copy()
+        except AttributeError:
+            self.flat_cube_region = self.flat_cube[:]
+        try:
             self.target_region = self.target[self.flat_region_ind].copy()
-        # for some reason, whether you work on a copy or a view affects the answer
+        except AttributeError:
+            self.target_region = self.target[:]
+            # for some reason, whether you work on a copy or a view affects the answer
         self.npix_region = np.size(newval)
 
     @property
@@ -414,7 +420,7 @@ class ReferenceCube(object):
 
         return new_basis
 
-    @classmethod
+    #@classmethod
     def generate_matched_filter(self, return_mf=False, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
@@ -528,116 +534,6 @@ def sort_squared_distance(targ, references):
         pass
     sorted_image_indices = np.argsort(dist)[start_index:]
     return sorted_image_indices
-
-#################
-# PSF INJECTION #
-#################
-def inject_psf(img, psf, center):
-    """
-    Inject a PSF into an image by adding it to the existing pixels
-    This handles psfs close to the edge of the image by first padding the image, injecting the psf,
-    and then cutting down to the original image
-    """
-    center = np.array(center)
-    img_pix, psf_pix = utils.get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
-
-    injected_img = img.copy()
-    injected_img[img_pix[0], img_pix[1]] += psf[psf_pix[0], psf_pix[1]]
-
-    return injected_img
-    
-def inject_psfs(img, psf, center, scale_flux=None, return_psf=False, subtract_mean=False, return_flat=False):
-    """
-    Inject a PSF into an image at a location given by center. Optional: scale PSF
-    Input:
-        img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
-        psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
-             must have same 1st dimension as img 
-        center: center of the injection in the image
-        scale_flux: multiply the PSF by this number. If this is an array,
-             img and psf will be tiled to match its length
-             if scale_flux is None, don't scale psf
-        return_psf: (False) return an image with the PSF and zeros elsewhere
-        subtract_mean: (False) mean-subtract before returning
-        return_flat: (False) flatten the array along the pixels axis before returning
-    Returns:
-       injected_img: 2-D image or 3D cube with the injected PSF(s)
-       injection_psf: (if return_psf=True) 2-D normalized PSF full image
-    """
-    if scale_flux is None:
-        scale_flux = 1
-    scale_flux = np.array(scale_flux)
-    
-    # get the right dimensions
-    img_tiled = np.tile(img, (np.size(scale_flux),1,1))
-    psf_tiled = np.tile(psf, (np.size(scale_flux),1,1))
-
-    # get the injection pixels
-    psf_rad =  np.array([np.int(np.floor(i/2.)) for i in psf.shape[-2:]])
-    injection_pix, psf_pix = utils.get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
-    
-    # normalized full-image PSF in case you want it later
-    injection_psf = np.zeros(img.shape)
-    cut_psf = psf[psf_pix[0],psf_pix[1]]
-    injection_psf[injection_pix[0], injection_pix[1]] += cut_psf/np.nansum(psf)
-
-    # add the scaled psfs
-    injection_img = np.zeros(img_tiled.shape)
-    #injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scale_flux).T
-    injection_img[:,injection_pix[0], injection_pix[1]] += psf_tiled*scale_flux[:,None,None]
-    full_injection = injection_img + img_tiled
-    if subtract_mean is True:
-        full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
-        injection_psf = injection_psf - np.nanmean(injection_psf)
-    if return_flat is True:
-        shape = full_injection.shape
-        if full_injection.ndim == 2:
-            full_injection = np.ravel(full_injection)
-        else:
-            full_injection = np.reshape(full_injection, (shape[0],reduce(lambda x,y: x*y, shape[1:])))
-    if return_psf is True:
-        return full_injection, injection_psf
-    return np.squeeze(full_injection)
-
-def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
-    """
-    Inject a flattened psf into a flattened region with some scaling.
-    Input:
-        flat_img: 1-d array of the region of interest
-        flat_psf: 1-d array of the psf in the region at the correct location
-        scaling: (1) multiply the PSF by this number. If this is an array, 
-                 img and psf will be tiled to match its length.
-        subtract_mean: (False) mean-subtract images before returning
-    """
-    scaling = np.array(scaling)
-    # get the right dimensions
-    flat_img_tiled = np.tile(flat_img, (np.size(scaling),1))
-    flat_psf_tiled = np.tile(flat_psf, (np.size(scaling),1))
-
-    # assume the PSF is already properly aligned
-    scaled_psf_tiled = (flat_psf_tiled.T*scaling).T
-    
-    injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
-    if subtract_mean == True:
-        injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
-    return injected_flat_img
-
-def mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1):
-    """
-    flat_img: 2-D image to inject into
-    flat_psf: 2-D psf 
-    """
-    scaling = np.array(scaling)
-    # get the right dimensions
-    flat_img_tiled = np.tile(flat_img, (np.size(scaling),1))
-    flat_psf_tiled = np.tile(flat_psf, (np.size(scaling),1))
-
-    # assume the PSF is already properly aligned
-    scaled_psf_tiled = (flat_psf_tiled.T*scaling).T
-    
-    injected_flat_img = np.squeeze(flat_img_tiled + scaled_psf_tiled)
-    injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
-    return injected_flat_img
 
 
 def make_image_from_region(region, indices, shape):
@@ -840,3 +736,30 @@ def iterate_references(references, n_bases, matched_filter=None, mf_locations=No
         ref_mf_fluxes[-1] = utils.flatten_image_axes(ref_mf_fluxes[-1])[:,rc.flat_region_ind]/mf_norm
 
         
+
+
+def apply_klip_and_mf(img_flat, img_shape, kl_basis, kl_pix, n_bases=None, double_project=False,
+                      matched_filter=None, mf_locations=None, throughput_corr=False, flux_scale=1):
+    """
+    Wrapper that handles both doing KLIP on an image and getting the flux with a matched filter.
+    Args:
+      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
+      img_shape: 2-D Nrow, Ncol image shape
+      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
+      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
+          If None, use full basis
+      double_project: apply KL twice (useful for some FMMF cases)
+      matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
+      mf_locations: flattened pixel indices of the pixels to apply the matched filter
+      throughput_corr: [False] to apply throughput correction, pass an array of normalization factors 
+            that matches the shape of the matched filter
+      flux_scale: any additional scaling you want to apply to the matched filter
+
+    Returns:
+      mf_map: image with the matched filter results
+    """
+    kl_sub = klip_subtract_with_basis(img_flat, kl_basis, n_bases, double_project)
+    kl_sub_img = make_image_from_region(kl_sub, kl_pix, img_shape)
+    mf = MF.apply_matched_filter_to_images(kl_sub_img, matched_filter, locations=mf_locations,
+                                           throughput_corr=throughput_corr, scale=flux_scale)
+    return mf
