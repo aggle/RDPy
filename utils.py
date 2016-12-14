@@ -178,7 +178,7 @@ def flatten_leading_axes(array, axis=-1):
 #################
 # PSF INJECTION #
 #################
-def inject_psfs(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
     """
     Inject a PSF into an image at a location given by center. Optional: scale PSF
     Input:
@@ -197,13 +197,13 @@ def inject_psfs(img, psf, center, scale_flux=None, subtract_mean=False, return_f
     """
 
     if np.ndim(center) == 1:
-        injected_psf  = inject_psf(img, psf, center, scale_flux, return_psf, subtract_mean, return_flat)
+        injected_psf  = _inject_psf(img, psf, center, scale_flux, subtract_mean, return_flat)
     elif np.ndim(center) > 1:
-        injected_psf = np.sum(np.array([inject_psf(img, psf, c, scale_flux, return_psf, subtract_mean, return_flat)
+        injected_psf = np.sum(np.array([_inject_psf(img, psf, c, scale_flux, subtract_mean, return_flat)
                                         for c in center]), axis=0)
     return injected_psf
     
-def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
     """
     Inject a PSF into an image at a location given by center. Optional: scale PSF
     Input:
@@ -221,26 +221,25 @@ def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_fl
        injection_psf: (if return_psf=True) 2-D normalized PSF full image
     """
     if scale_flux is None:
-        scale_flux = 1
+        scale_flux = np.array([1])
     scale_flux = np.array(scale_flux)
-    
+
     # get the right dimensions
     img_tiled = np.tile(img, (np.size(scale_flux),1,1))
     psf_tiled = np.tile(psf, (np.size(scale_flux),1,1))
 
     # get the injection pixels
-    psf_rad =  np.array([np.int(np.floor(i/2.)) for i in psf.shape[-2:]])
     injection_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
     
     # normalized full-image PSF in case you want it later
-    injection_psf = np.zeros(img.shape)
-    cut_psf = psf[psf_pix[0],psf_pix[1]]
-    injection_psf[injection_pix[0], injection_pix[1]] += cut_psf/np.nansum(psf)
+    #injection_psf = np.zeros(img.shape)
+    #cut_psf = psf[psf_pix[0],psf_pix[1]]
+    #injection_psf[injection_pix[0], injection_pix[1]] += cut_psf/np.nansum(psf)
 
     # add the scaled psfs
     injection_img = np.zeros(img_tiled.shape)
     #injection_img[:,injection_pix[0], injection_pix[1]] += (psf_tiled.T*scale_flux).T
-    injection_img[:,injection_pix[0], injection_pix[1]] += psf_tiled*scale_flux[:,None,None]
+    injection_img[:,injection_pix[0], injection_pix[1]] += psf_tiled[:,psf_pix[0], psf_pix[1]]*scale_flux[:,None,None]
     full_injection = injection_img + img_tiled
     if subtract_mean is True:
         full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
@@ -251,8 +250,8 @@ def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_fl
             full_injection = np.ravel(full_injection)
         else:
             full_injection = np.reshape(full_injection, (shape[0],reduce(lambda x,y: x*y, shape[1:])))
-    if return_psf is True:
-        return full_injection, injection_psf
+    #if return_psf is True:
+    #    return full_injection, injection_psf
     return np.squeeze(full_injection)
 
 def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
