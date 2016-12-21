@@ -4,6 +4,7 @@ Matched Filter stuff
 
 import numpy as np
 import utils
+import RDI
 
 ##############################
 # GENERATING MATCHED FILTERS #
@@ -72,7 +73,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
     for i in nloc:
         psf_template = mf_flat_template[i,region_pix]
         # don't be intimidated - fancy python crap to match array dims
-        tmp = np.tile(klip_subtract_with_basis(psf_template,
+        tmp = np.tile(RDI.klip_subtract_with_basis(psf_template,
                                                kl_basis,
                                                n_bases),
                       np.ones_like(mf_flat_template.shape))

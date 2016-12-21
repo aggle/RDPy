@@ -54,6 +54,7 @@ class ReferenceCube(object):
         # reduction region
         self.region = region_mask
         # KL stuff
+        self.n_basis=None
         self.kl_basis = None
         self.evecs = None
         self.evals = None
@@ -168,10 +169,11 @@ class ReferenceCube(object):
             self.flat_cube_region = self.flat_cube[:,self.flat_region_ind].copy()
         except AttributeError:
             self.flat_cube_region = self.flat_cube[:]
-        try:
-            self.target_region = self.target[self.flat_region_ind].copy()
-        except AttributeError:
-            self.target_region = self.target[:]
+        if self.target is not None:
+            try:
+                self.target_region = self.target[self.flat_region_ind].copy()
+            except AttributeError:
+                self.target_region = self.target[:]
             # for some reason, whether you work on a copy or a view affects the answer
         self.npix_region = np.size(newval)
 
@@ -376,7 +378,10 @@ class ReferenceCube(object):
         argdict={}
         argdict['img_flat'] =  kwargs.get('img_flat', getattr(self,'target_region'))
         argdict['kl_basis'] =  kwargs.get('kl_basis', getattr(self,'kl_basis'))
-        argdict['n_bases'] =  kwargs.get('n_bases', len(getattr(self,'kl_basis')))
+        try:
+            argdict['n_bases'] =  kwargs.get('n_bases', getattr(self,'n_basis'))
+        except AttributeError:
+            argdict['n_bases'] = len(getattr(self,'kl_basis'))
         argdict['double_project']= kwargs.get('double_project', False)
         vals = klip_subtract_with_basis(argdict['img_flat'],
                                         argdict['kl_basis'],
@@ -394,8 +399,8 @@ class ReferenceCube(object):
         argdict={}
         argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
         argdict['kl_max'] = kwargs.get('kl_max', len(argdict['references']))
-        argdict['return_evecs'] = kwargs.get('return_evecs', True)
-        argdict['return_evals'] = kwargs.get('return_evals', True)
+        argdict['return_evecs'] = kwargs.get('return_evecs', False)
+        argdict['return_evals'] = kwargs.get('return_evals', False)
         
         vals = generate_kl_basis(references = argdict['references'],
                                  kl_max = argdict['kl_max'],
@@ -421,7 +426,7 @@ class ReferenceCube(object):
         return new_basis
 
     #@classmethod
-    def generate_matched_filter(self, return_mf=False, **kwargs):
+    def generate_matched_filter(self, return_mf=False, no_kl=True, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
         reference cube properties as arguments
@@ -435,12 +440,16 @@ class ReferenceCube(object):
         #for key in keys:
         #    argdict[key] = kwargs.get(key, getattr(self,key))
         argdict['psf'] = kwargs.get('psf',self.instrument.psf)
-        try:
-            argdict['kl_basis'] = kwargs.get('kl_basis', self.kl_basis)
-        except AttributeError as e:
-            print(e)
-            print("No KL basis - generating MF with unmodified PSFs")
+        # KL basis
+        if no_kl is True:
             argdict['kl_basis'] = None
+        else:
+            try:
+                argdict['kl_basis'] = kwargs.get('kl_basis', self.kl_basis)
+            except AttributeError as e:
+                print(e)
+                print("No KL basis - generating MF with unmodified PSFs")
+                argdict['kl_basis'] = None
         argdict['n_bases'] = kwargs.get('n_bases', self.n_basis)
         argdict['imshape'] = kwargs.get('imshape', self.imshape)
         argdict['region_pix'] = kwargs.get('region_pix', self.flat_region_ind)
@@ -471,6 +480,8 @@ class ReferenceCube(object):
         #argdict['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
         #argdict['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
         kwargs['matched_filter'] = kwargs.get('matched_filter', getattr(self,'matched_filter'))
+        #print(kwargs['matched_filter'])
+        #print(type(kwargs['matched_filter']))
         kwargs['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
         mf_map = MF.apply_matched_filter_to_image(image, **kwargs)
                                                #matched_filter,

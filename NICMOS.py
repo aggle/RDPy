@@ -9,7 +9,7 @@ from astropy import units
 from Instrument import Instrument
 
 # unit definitions for flux conversion
-photflam = (units.erg / (units.cm**2 * units.Angstrom * units.count))
+photflam_units = (units.erg / (units.cm**2 * units.Angstrom * units.count))
 
 class NICMOS(Instrument):
     """
