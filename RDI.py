@@ -586,20 +586,25 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
           If None, use full basis
       double_project: apply KL twice (useful for some FMMF cases)
     Return:
-      kl_sub: array with same shape as input image, after KL PSF subtraction, KL index is the first axis
+      kl_sub: array with same shape as input image, after KL PSF subtraction. The KL basis axis is second-to-last (before image pixels)
     """
     """
     New idea: take arbitrary input shape where the last axes is the pixels, turn it into 
-    Nwhatever x Npix, do KLIP, and then return 
+    whatever x Npix, do KLIP, and then return 
     """
-    orig_shape = np.copy(img_flat.shape)
+    # reshape input
     # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
     if img_flat.ndim == 1:
         # add an empty axis to the front
         img_flat = np.expand_dims(img_flat, 0)
-    if img_flat.ndim > 2:
-        flat_shape = (reduce(lambda x,y: x*y, orig_shape[:-1]), orig_shape[-1])
-        img_flat = img_flat.reshape(flat_shape)    
+        flat_shape = img_flat.shape
+    elif img_flat.ndim > 2:
+        flat_shape = (reduce(lambda x,y: x*y, img_flat.shape[:-1]), img_flat.shape[-1])
+    else:
+        flat_shape = img_flat.shape
+    orig_shape = np.copy(img_flat.shape)
+    img_flat = img_flat.reshape(flat_shape)    
+
     kl_basis = np.asarray(kl_basis)
     img_flat_mean_sub = img_flat - np.nanmean(img_flat, axis=-1, keepdims=True)
 
@@ -627,7 +632,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
                             for i in range(len(n_bases))])
         
     # put KL axis in front of other axes and reshape the return value
-    new_shape = [len(n_bases)] + [i for i in orig_shape]
+    new_shape = [orig_shape[0]] + [len(n_bases)] + [i for i in orig_shape[1:]]
     kl_sub = np.reshape(kl_sub, new_shape)
     return np.squeeze(kl_sub)
 
