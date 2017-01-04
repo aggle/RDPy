@@ -2,6 +2,7 @@ import sys
 import os
 import numpy as np
 import pandas as pd
+from functools import reduce
 
 from astropy.io import fits
 from astropy import units
@@ -24,9 +25,10 @@ class NICMOS(Instrument):
         self.Nx = 80 * units.pixel # redundant
         self.Ny = 80 * units.pixel # redundant
         self.imshape = np.array([80,80])
+        self.npix = reduce(lambda x,y:x*y, self.imshape)
         self.center = np.array([40,40])
         self.pix_scale = 75 * units.mas/units.pixel # citation needed
-        self.IWA = 6 * units.pixel * self.pix_scale #600 * units.mas # citation needed
+        self.IWA = 300 * units.mas # citation needed
         self.IWApix = self.IWA/self.pix_scale
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
 
