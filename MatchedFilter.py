@@ -23,7 +23,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         imshape [None]: Nrows x Ncols
         region_pix: the raveled image pixel indices covered by the KL basis. 
             if None, assumed to cover the whole image
-        mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
+        mf_locations: the pixel coordinates of the locations to apply the matched filter.
+            Can be raveled coordinates OR 2xNloc array (then, must provide imshape)
     Returns:
         MF: [Nloc x [Nkl x [Npix]]] cube of flattened matched filters. 
             The first index tells you what pixel in the image it corresponds to, 
@@ -36,6 +37,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         mf_locations = list(range(imshape[0]*imshape[1]))
     if np.ndim(mf_locations) == 0:
         mf_locations = [mf_locations]
+    if np.ndim(mf_locations) == 2:
+        mf_locations = np.ravel_multi_index(mf_locations.T, dims=imshape)
     # if region_pix is not set, assume the whole image was used for KLIP
     if region_pix is None:
         region_pix = list(range(imshape[0]*imshape[1]))
@@ -86,6 +89,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 
 def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=None):
     """
+    ## DEPRECATED ##
     Generate a matched filter with just the theoretical PSF, not the KL-modified one
     Arguments:
         psf: a PSF stamp
@@ -136,6 +140,7 @@ def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=Non
 def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
                                   throughput_corr=False):
     """
+    DEPRECATED
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
         image: 2-D image
@@ -160,10 +165,13 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     image[nanpix_img] = 0
     matched_filter[nanpix_mf] = 0
 
-    # instantiate the map
-    mf_map = np.zeros_like(image)
+    # set up the location indices
     if locations is None:
         locations = list(range(im_shape[0]*im_shape[1]))
+
+    
+    # instantiate the map
+    mf_map = np.zeros_like(image)
 
     # apply matrix multiplication
     try:
@@ -181,11 +189,48 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
 
-
-def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
-                                   throughput_corr=False, scale=1):
+def apply_matched_filter(images, matched_filter=None, throughput_corr=False, scale=1):
     """
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution, and that the regions correspond to each other.
+    Arguments:
+        image: 1-D flattened image or N-D array of images where the last axis 
+          is the flattened region of interest. The image(s) and the matched 
+          filter must have the last two axes aligned.
+          Tip: use utils.flatten_image_axes(images) to call on 2-D images
+        matched_filter: Cube of flattened matched filters, one MF per pixel
+          where we want to know the flux.
+        scale: any additional scaling you want to apply to the matched filter
+    Returns:
+        mf_map: (array of) images where the matched filter has been applied at each pixel
+ 
+    """
+    orig_shape = np.shape(images)
+    if images.ndim == 1:
+        images = np.expand_dims(images,0)
+    
+    # numpy cannot handle nan's so set all nan's to 0! the effect is the same
+    nanpix_img = np.where(np.isnan(images))
+    nanpix_mf = np.where(np.isnan(matched_filter))
+    images[nanpix_img] = 0
+    matched_filter[nanpix_mf] = 0
+
+    # apply the matched filter
+    mf_map = np.dot(matched_filter, np.rollaxis(images, -1, -2)).T
+    # undo the funky linear algebra reshaping
+    mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
+    # if throughput corrections are provided, apply them to the matched filter results
+    if not isinstance(throughput_corr, bool):
+        mf_map /= throughput_corr
+
+    # multiply the remaining scale factors
+    mf_map *= scale
+    return mf_map
+
+    
+def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
+                                   throughput_corr=False, im_shape=None, scale=1):
+    """
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution, and that the regions correspond to each other.
     Arguments:
         image: 2-D image or 3-D array of images
             the image(s) and the matched filter must have the last two axes aligned
@@ -215,9 +260,9 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
     matched_filter[nanpix_mf] = 0
 
     # instantiate the map
-    #mf_map = np.zeros_like(image)
     if locations is None:
         locations = list(range(im_shape[0]*im_shape[1]))
+    locations = np.array(locations)
 
     mf_map = np.dot(matched_filter, np.rollaxis(image, -1, -2)).T
     # undo the funky linear algebra reshaping
@@ -229,9 +274,11 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
     mf_map *= scale
     # put the nans back
     matched_filter[nanpix_mf] = np.nan
-    mf_map[nanpix_img] = np.nan
+    #mf_map[nanpix_img] = np.nan
 
-    return mf_map.reshape(orig_shape)
+    # restore shape: should be all leading axes + mf locations
+    final_shape = list(orig_shape[:-2])+[np.size((locations))]
+    return mf_map.reshape(final_shape)
 
 ##############
 # THROUGHPUT #
@@ -256,5 +303,5 @@ def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
     psf_norm = np.linalg.norm(psfs, axis=-1)**2
     oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
     
-    missing_flux = psf_norm - oversub
-    return missing_flux.reshape([len(n_bases)] + orig_shape[:-1])
+    missing_flux = np.reshape(psf_norm - oversub, [len(n_bases)] + orig_shape[:-1])
+    return np.squeeze(missing_flux)

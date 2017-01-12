@@ -164,7 +164,8 @@ def flatten_leading_axes(array, axis=-1):
     so the final result is 2-D, with the last axis being the pixel axis
     Args:
         array: an array of at least 2 dimensions
-        axis [-1]: preserves shape up to this axis (e.g. -1 for last axis, -2 for last two axes)
+        axis [-1]: flattens shape up to this axis (e.g. -1 to flatten up to 
+          the last axis, -2 to preserve last two axes, etc.)
     """
     # test axis value is valid
     if np.abs(axis) >= array.ndim:

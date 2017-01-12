@@ -16,8 +16,8 @@ from scipy.stats import t
 
 from functools import reduce
 
-import utils
-import MatchedFilter as MF
+from . import utils
+from . import MatchedFilter as MF
 
 class ReferenceCube(object):
     """
@@ -434,11 +434,7 @@ class ReferenceCube(object):
         If return_mf is True, then returns matched filter
         For more help, see RDI.generate_matched_filter()
         """
-
-        keys=['psf','kl_basis','n_bases','imshape','region_pix','mf_locations']
         argdict = {}
-        #for key in keys:
-        #    argdict[key] = kwargs.get(key, getattr(self,key))
         argdict['psf'] = kwargs.get('psf',self.instrument.psf)
         # KL basis
         if no_kl is True:
@@ -454,9 +450,8 @@ class ReferenceCube(object):
         argdict['imshape'] = kwargs.get('imshape', self.imshape)
         argdict['region_pix'] = kwargs.get('region_pix', self.flat_region_ind)
         argdict['mf_locations'] = kwargs.get('mf_locations', self.matched_filter_locations)
-
-
-        #print(argdict)
+        # set matched_filter_locations
+        self.matched_filter_locations = argdict['mf_locations']
         mf = MF.generate_matched_filter(**argdict) # this calls the module method
         if return_mf is False:
             self.matched_filter = mf
@@ -611,9 +606,8 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     # make sure n_bases is iterable
     if n_bases is None:
         n_bases = [len(kl_basis)+1]
-    if hasattr(n_bases, '__iter__') is False:
+    if hasattr(n_bases, '__getitem__') is False:
         n_bases = [n_bases]
-
 
     # project the image onto the PSF basis
     psf_projection = np.array([np.dot(np.dot(img_flat_mean_sub, kl_basis[:n_bases[i]].T),
@@ -630,11 +624,11 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
         kl_sub -= np.array([np.dot(np.dot(kl_sub[i], kl_basis[:n_bases[i]].T),
                                    kl_basis[:n_bases[i]])
                             for i in range(len(n_bases))])
-        
-    # put KL axis in front of other axes and reshape the return value
-    new_shape = [orig_shape[0]] + [len(n_bases)] + [i for i in orig_shape[1:]]
-    kl_sub = np.reshape(kl_sub, new_shape)
+    # the KL axis ends up in front. We want to put it just before the image axis
+    kl_sub = np.rollaxis(kl_sub, 0, -1)
     return np.squeeze(kl_sub)
+    #kl_sub = np.reshape(kl_sub, new_shape)
+    #return np.squeeze(kl_sub)
 
 
     
@@ -665,9 +659,17 @@ def generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_e
     nan_refs = np.where(np.isnan(references))
     ref_psfs_mean_sub[nan_refs] = 0
 
-    # generate the covariance matrix
+    # check kl_max cases: cannot be greater than the number of references
+    # if kl_max isn't provided
     if kl_max is None:
         kl_max = nrefs-1
+    # if it's a number, make sure it's less than nrefs
+    elif kl_max >= nrefs:
+            kl_max = nrefs-1
+    else: # whatever else, just use all the kl modes
+        kl_max = nrefs-1
+    
+    # generate the covariance matrix
     covar = np.cov(ref_psfs_mean_sub) * (npix-1) # undo numpy's normalization
     evals, evecs = la.eigh(covar, eigvals=(0,kl_max-1))
     

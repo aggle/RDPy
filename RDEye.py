@@ -1,11 +1,12 @@
 """
 RDEye.py - "Eye" as in "Private Eye" because it's a detective, get it????
 """
-
-
 import numpy as np
 from scipy.interpolate import interp1d
 import pandas as pd
+import sys
+sys.path.append('./')
+import utils
 
 def frac_above_thresh(data, thresh):
     """
@@ -43,10 +44,11 @@ def generate_ROC_dataframe(Nimgs, levels, names):
     There is one column for each image in range(Nimgs)
     Args:
       Nimgs: the number of images in the cube whose photometry need to be stored
-      levels: list of list-like objects that will be used to index the results
+      levels: list of list-like objects that will be used to index the results eg [['a','b'],[0,1,2]]
       names: list of strings - the name of each level
     """
     index = pd.MultiIndex.from_product([level for level in levels], names=names)
     ref_cols = ['ref{0}'.format(i) for i in range(Nimgs)]
     df = pd.DataFrame(np.nan, index=index, columns=ref_cols)
     return df
+
