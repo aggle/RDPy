@@ -72,7 +72,7 @@ def image_2_seppa(coord, ORIENTAT=0, center=(40,40), pix_scale = 75):
     """
     convert from image coordinates to sep and pa
     coord: (row, col) coord in image
-    orientat: clockwise angle betwee y in image and north in nicmos
+    orientat: clockwise angle between y in image and north in nicmos
     center: image center
     pix_scale: 75 mas/pix for nicmos
     """
