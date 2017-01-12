@@ -16,8 +16,8 @@ from scipy.stats import t
 
 from functools import reduce
 
-from . import utils
-from . import MatchedFilter as MF
+import utils
+import MatchedFilter as MF
 
 class ReferenceCube(object):
     """
@@ -608,7 +608,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
         n_bases = [len(kl_basis)+1]
     if hasattr(n_bases, '__getitem__') is False:
         n_bases = [n_bases]
-
+        
     # project the image onto the PSF basis
     psf_projection = np.array([np.dot(np.dot(img_flat_mean_sub, kl_basis[:n_bases[i]].T),
                                       kl_basis[:n_bases[i]])
