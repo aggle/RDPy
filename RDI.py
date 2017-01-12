@@ -398,10 +398,9 @@ class ReferenceCube(object):
         """.format(generate_kl_basis.__doc__)
         argdict={}
         argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
-        argdict['kl_max'] = kwargs.get('kl_max', len(argdict['references']))
+        argdict['kl_max'] = kwargs.get('kl_max', np.max(self.n_basis))#len(argdict['references']))
         argdict['return_evecs'] = kwargs.get('return_evecs', False)
         argdict['return_evals'] = kwargs.get('return_evals', False)
-        
         vals = generate_kl_basis(references = argdict['references'],
                                  kl_max = argdict['kl_max'],
                                  return_evecs = argdict['return_evecs'],
@@ -639,7 +638,61 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
 ################
 ### KL BASIS ###
 ################
-def generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_evals=False):
+def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False):
+    """
+    Generate the KL basis from a set of reference images. Always returns the full KL basis
+    This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
+    Args:
+        references: Nimg x Npix flattened array of reference images
+        kl_max [None]: number of KL modes to return. Default: all
+        return_evecs [False]: if True, return the eigenvectors of the covar matrix
+        return_evals [False]: if true, return the eigenvalues of the eigenvectors
+    Returns:
+        kl_basis: Full KL basis (up to kl_max modes if given; default len(references))
+        evecs: covariance matrix eigenvectors, if desired
+        evals: eigenvalues of the eigenvectors, if desired
+    """
+    nrefs, npix = references.shape
+    ref_psfs_mean_sub = references - np.expand_dims(np.nanmean(references, axis=-1), -1)
+    # set nan's to 0 so that they don't contribute to the covar matrix, and don't mess up numpy
+    nan_refs = np.where(np.isnan(references))
+    ref_psfs_mean_sub[nan_refs] = 0
+
+    covar = np.cov(ref_psfs_mean_sub)
+
+    
+    # Limit to the valid number of KL modes
+    tot_basis = covar.shape[0] # max number of KL modes
+    numbasis = np.clip(kl_max-1, 0, tot_basis-1)
+    max_basis = np.max(numbasis)+1
+
+    # calculate eigenvales and eigenvectors
+    evals, evecs = la.eigh(covar, eigvals=(tot_basis - max_basis, tot_basis-1))
+
+    # reverse the order
+    evals = np.copy(evals[::-1])
+    evecs = np.copy(evecs[:,::-1], order='F')
+    
+    # check for negative eigenvalues
+    check_nans = np.any(evals<=0)
+    if check_nans is True:
+        neg_evals = (np.where(evals <= 0))[0]
+        kl_basis[:,neg_evals] = 0
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T/np.sqrt(evals[:,None])
+    kl_basis = kl_basis * (1./np.sqrt(npix-1))
+    
+    # assemble objects to return
+    return_objs = [kl_basis]
+    if return_evecs is True:
+        return_objs.append(evecs)
+    if return_evals is True:
+        return_objs.append(evals)
+    if len(return_objs) == 1:
+        return_objs = return_objs[0]
+    return return_objs
+    
+
+def old_generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_evals=False):
     """
     Generate the KL basis from a set of reference images. Always returns the full KL basis
     This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
@@ -665,9 +718,9 @@ def generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_e
         kl_max = nrefs-1
     # if it's a number, make sure it's less than nrefs
     elif kl_max >= nrefs:
-            kl_max = nrefs-1
-    else: # whatever else, just use all the kl modes
         kl_max = nrefs-1
+    else: # whatever else, just use all the kl modes
+        pass #kl_max = nrefs-1
     
     # generate the covariance matrix
     covar = np.cov(ref_psfs_mean_sub) * (npix-1) # undo numpy's normalization
