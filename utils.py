@@ -7,6 +7,21 @@ from astropy import units
 from functools import reduce
 
 
+# general rotation matrix
+def rot_mat(angle):
+    """
+    Generate a rotation matrix for a given angle in degrees. 
+    It is designed to operate on images in python and rotate them
+    such that north is up and east is to the left (i.e. CCW).
+    Args:
+        angle: rotation angle in degrees
+    Returns: 
+        2x2 rotation matrix to rotate a 2-D vector by the given angle
+    """
+rot_mat = lambda angle: np.array([[np.cos(angle*np.pi/180), np.sin(angle*np.pi/180)],
+                                 [-np.sin(angle*np.pi/180), np.cos(angle*np.pi/180)]])
+
+
 ###############
 # COORDINATES #
 ###############
@@ -64,7 +79,7 @@ def rotate_centered_coordinates(coord, angle, center=(40,40)):
     coord = np.array(coord[::-1])
     center = np.array(center[::-1])
     angle = angle * np.pi/180 # convert to radians
-    rot_mat = np.array([[np.cos(angle), np.sin(angle)],[-np.sin(angle), np.cos(angle), ]])
+    rot_mat = np.array([[np.cos(angle), np.sin(angle)],[-np.sin(angle), np.cos(angle)]])
     newx = np.dot(rot_mat, coord-center) + center
     return newx[::-1]
 
@@ -72,7 +87,7 @@ def image_2_seppa(coord, ORIENTAT=0, center=(40,40), pix_scale = 75):
     """
     convert from image coordinates to sep and pa
     coord: (row, col) coord in image
-    orientat: clockwise angle between y in image and north in nicmos
+    orientat: angle between y in image and north in nicmos, measured to the east
     center: image center
     pix_scale: 75 mas/pix for nicmos
     """
@@ -80,8 +95,9 @@ def image_2_seppa(coord, ORIENTAT=0, center=(40,40), pix_scale = 75):
     center = np.array(center)
     centered_coord = coord-center
     sep = np.linalg.norm(centered_coord, axis=-1)*pix_scale
-    pa = np.arctan2(centered_coord.T[1],centered_coord.T[0])*180/np.pi
-    pa -= ORIENTAT
+    # rotation and ORIENTAT are defined CCW so need a -1 here
+    pa = -1*np.arctan2(centered_coord.T[1],centered_coord.T[0])*180/np.pi
+    pa += ORIENTAT
     return (sep, pa)
 
 def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
@@ -93,7 +109,8 @@ def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
     center = np.array(center)
     pa = pa*np.pi/180
     ORIENTAT = ORIENTAT*np.pi/180
-    tot_ang = pa+ORIENTAT
+    # rotation and ORIENTAT are defined CCW so need a -1 here
+    tot_ang = -1*(pa-ORIENTAT)
     row = sep*np.cos(tot_ang)/pix_scale + center[0]
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
     return (row, col)
