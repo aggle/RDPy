@@ -207,7 +207,9 @@ def apply_matched_filter(images, matched_filter=None, throughput_corr=False, sca
     orig_shape = np.shape(images)
     if images.ndim == 1:
         images = np.expand_dims(images,0)
-    
+        
+    if np.ndim(throughput_corr) == 1:
+        throughput_corr = np.expand_dims(throughput_corr, -1)
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     nanpix_img = np.where(np.isnan(images))
     nanpix_mf = np.where(np.isnan(matched_filter))
@@ -224,7 +226,7 @@ def apply_matched_filter(images, matched_filter=None, throughput_corr=False, sca
 
     # multiply the remaining scale factors
     mf_map *= scale
-    return mf_map
+    return np.squeeze(mf_map)
 
     
 def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
@@ -292,7 +294,7 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
         kl_basis: the KL basis for projection (KLmax, Region_pix)
         n_bases [None]: list of KL_max values
     returns:
-        [(n_basis x) 1] throughput correction, per KLmax per location
+        [(n_basis x) Nloc] throughput correction, per KLmax per location
     """
     if kl_basis is None:
         # no KL basis - just return the norm^2 of the matched filter
@@ -304,7 +306,12 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
 
     #psf_norm  = np.nansum(psfs**2, axis=-1)
     psf_norm = np.linalg.norm(psfs, axis=-1)**2
-    oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
-    
-    missing_flux = np.reshape(psf_norm - oversub, [len(n_bases)] + orig_shape[:-1])
+    #oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
+    psf_basis_prod = np.dot(psfs, kl_basis.T)**2
+    oversub = np.array([np.nansum(psf_basis_prod[...,:n], axis=-1) for n in n_bases])
+    # put the throughput back into the original shape so that the indexes match for correcting
+    # throughput.
+    # we know the first axis is gonna be the KL modes, and the rest is the original shape
+    # except for the pixel axis
+    missing_flux = np.reshape(psf_norm[None,:] - oversub, [len(n_bases)] + orig_shape[:-1])
     return np.squeeze(missing_flux)
