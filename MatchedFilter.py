@@ -284,7 +284,7 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
 # THROUGHPUT #
 ##############
 
-def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
+def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     """
     Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
     Arguments:
@@ -294,6 +294,9 @@ def fmmf_throughput_correction(psfs, kl_basis, n_bases=None):
     returns:
         [(n_basis x) 1] throughput correction, per KLmax per location
     """
+    if kl_basis is None:
+        # no KL basis - just return the norm^2 of the matched filter
+        return np.linalg.norm(psfs, axis=-1)**2
     if n_bases is None:
         n_bases = [len(kl_basis)+1]
     orig_shape = list(psfs.shape)
