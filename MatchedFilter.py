@@ -93,10 +93,49 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 # APPLYING MATCHED FILTERS #
 ############################
 
+def apply_matched_filter(images, matched_filter=None, throughput_corr=False, scale=1):
+    """
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution, and that the regions correspond to each other.
+    Arguments:
+        image: 1-D flattened image or N-D array of images where the last axis 
+          is the flattened region of interest. The image(s) and the matched 
+          filter must have the last two axes aligned.
+          Tip: use utils.flatten_image_axes(images) to call on 2-D images
+        matched_filter: Cube of flattened matched filters, one MF per pixel
+          where we want to know the flux.
+        scale: any additional scaling you want to apply to the matched filter
+    Returns:
+        mf_map: (array of) images where the matched filter has been applied at each pixel
+ 
+    """
+    orig_shape = np.shape(images)
+    if images.ndim == 1:
+        images = np.expand_dims(images,0)
+        
+    if np.ndim(throughput_corr) == 1:
+        throughput_corr = np.expand_dims(throughput_corr, -1)
+    # numpy cannot handle nan's so set all nan's to 0! the effect is the same
+    nanpix_img = np.where(np.isnan(images))
+    nanpix_mf = np.where(np.isnan(matched_filter))
+    images[nanpix_img] = 0
+    matched_filter[nanpix_mf] = 0
+
+    # apply the matched filter
+    mf_map = np.dot(matched_filter, np.rollaxis(images, -1, -2)).T
+    # undo the funky linear algebra reshaping
+    mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
+    # if throughput corrections are provided, apply them to the matched filter results
+    if not isinstance(throughput_corr, bool):
+        mf_map /= throughput_corr
+
+    # multiply the remaining scale factors
+    mf_map *= scale
+    return np.squeeze(mf_map)
+
 def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
                                   throughput_corr=False):
     """
-    DEPRECATED
+    LEGACY CODE
     Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
     Arguments:
         image: 2-D image
@@ -145,50 +184,14 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     mf_map[nanpix_img] = np.nan
     return mf_map.reshape(orig_shape)
 
-def apply_matched_filter(images, matched_filter=None, throughput_corr=False, scale=1):
-    """
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution, and that the regions correspond to each other.
-    Arguments:
-        image: 1-D flattened image or N-D array of images where the last axis 
-          is the flattened region of interest. The image(s) and the matched 
-          filter must have the last two axes aligned.
-          Tip: use utils.flatten_image_axes(images) to call on 2-D images
-        matched_filter: Cube of flattened matched filters, one MF per pixel
-          where we want to know the flux.
-        scale: any additional scaling you want to apply to the matched filter
-    Returns:
-        mf_map: (array of) images where the matched filter has been applied at each pixel
- 
-    """
-    orig_shape = np.shape(images)
-    if images.ndim == 1:
-        images = np.expand_dims(images,0)
-        
-    if np.ndim(throughput_corr) == 1:
-        throughput_corr = np.expand_dims(throughput_corr, -1)
-    # numpy cannot handle nan's so set all nan's to 0! the effect is the same
-    nanpix_img = np.where(np.isnan(images))
-    nanpix_mf = np.where(np.isnan(matched_filter))
-    images[nanpix_img] = 0
-    matched_filter[nanpix_mf] = 0
-
-    # apply the matched filter
-    mf_map = np.dot(matched_filter, np.rollaxis(images, -1, -2)).T
-    # undo the funky linear algebra reshaping
-    mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
-    # if throughput corrections are provided, apply them to the matched filter results
-    if not isinstance(throughput_corr, bool):
-        mf_map /= throughput_corr
-
-    # multiply the remaining scale factors
-    mf_map *= scale
-    return np.squeeze(mf_map)
 
     
 def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
                                    throughput_corr=False, im_shape=None, scale=1):
     """
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution, and that the regions correspond to each other.
+    LEGACY CODE
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled 
+    to the same resolution, and that the regions correspond to each other.
     Arguments:
         image: 2-D image or 3-D array of images
             the image(s) and the matched filter must have the last two axes aligned
@@ -260,14 +263,16 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     orig_shape = list(psfs.shape)
     psfs = utils.flatten_leading_axes(psfs)
 
-    #psf_norm  = np.nansum(psfs**2, axis=-1)
+    # Norm of the matched filter
     psf_norm = np.linalg.norm(psfs, axis=-1)**2
-    #oversub = np.array([np.nansum(np.dot(psfs, kl_basis[:n].T)**2, axis=-1) for n in n_bases])
+    # Projection of the matched filter onto the KL basis
     psf_basis_prod = np.dot(psfs, kl_basis.T)**2
     oversub = np.array([np.nansum(psf_basis_prod[...,:n], axis=-1) for n in n_bases])
     # put the throughput back into the original shape so that the indexes match for correcting
     # throughput.
     # we know the first axis is gonna be the KL modes, and the rest is the original shape
     # except for the pixel axis
+    # temp comment
+    #missing_flux = np.reshape(psf_norm[None,:] - oversub, [len(n_bases)] + orig_shape[:-1])
     missing_flux = np.reshape(psf_norm[None,:] - oversub, [len(n_bases)] + orig_shape[:-1])
     return np.squeeze(missing_flux)

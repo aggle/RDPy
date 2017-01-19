@@ -108,7 +108,7 @@ class NICMOS(Instrument):
     @psf.setter
     def psf(self, new_psf):
         # normalized PSF
-        self._psf = new_psf / np.nansum(new_psf)
+        self._psf = new_psf/np.nansum(new_psf)
     
     @property
     def frac_flux(self):
