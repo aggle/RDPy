@@ -64,74 +64,30 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 
     # if no KL basis is supplied, return the *UNMODIFIED* psf
     if kl_basis is None:
-        return mf_flat_template * mf_flat_pickout
+        MF = mf_flat_template * mf_flat_pickout
     # otherwise, go on to the KLIP subtraction of the MF
-    
+    else:
     # store the klip-subtracted PSF models here - index across locations and KL modes
-    mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations), 
-                                         imshape[0], imshape[1]))
-    mf_flat_template_klipped = utils.flatten_image_axes(mf_flat_template_klipped)
+        mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations), 
+                                             imshape[0], imshape[1]))
+        mf_flat_template_klipped = utils.flatten_image_axes(mf_flat_template_klipped)
+        
+        nloc = list(range(len(mf_locations)))
+        for i in nloc:
+            psf_template = mf_flat_template[i,region_pix]
+            # don't be intimidated - fancy python crap to match array dims
+            tmp = np.tile(RDI.klip_subtract_with_basis(psf_template,
+                                                       kl_basis,
+                                                       n_bases),
+                          np.ones_like(mf_flat_template.shape))
+            mf_flat_template_klipped[:,i,region_pix] = tmp
+            mf_flat_template_klipped *= mf_flat_pickout
+            mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
+                                                      kl_basis, n_bases)
+            MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
+            MF = roll_axis(MF,0,2) # put the locations axis first 
+    return MF
 
-    nloc = list(range(len(mf_locations)))
-    for i in nloc:
-        psf_template = mf_flat_template[i,region_pix]
-        # don't be intimidated - fancy python crap to match array dims
-        tmp = np.tile(RDI.klip_subtract_with_basis(psf_template,
-                                               kl_basis,
-                                               n_bases),
-                      np.ones_like(mf_flat_template.shape))
-        mf_flat_template_klipped[:,i,region_pix] = tmp
-    mf_flat_template_klipped *= mf_flat_pickout
-    mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
-                                              kl_basis, n_bases)
-    MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
-    return np.rollaxis(MF,0,2) # put the locations axis first 
-
-def generate_matched_filter_noKL(psf, imshape, region_pix=None, mf_locations=None):
-    """
-    ## DEPRECATED ##
-    Generate a matched filter with just the theoretical PSF, not the KL-modified one
-    Arguments:
-        psf: a PSF stamp
-        imshape: the shape of the image that the matched filter will be tested against
-        region_pix: the raveled image pixel indices covered by the KL basis. 
-            if None, assumed to cover the whole image
-        mf_locations: the *raveled* pixel coordinates of the locations to apply the matched filter 
-    Returns:
-        MF: flux-normalized cube of flattened matched filters. 
-            The first index tells you what pixel in the image it corresponds to, through
-            np.unravel_index(i, imshape) if mf_locations is given, it will be 0 except 
-            for the slices corresponding to mf_pix 
-            (slice = np.ravel_multi_index(mf_pix.T, imshape, mode='clip')
-    """
-
-    # use the right number of KL basis vectors
-    # if mf_locations is not set, assume you want a MF at every pixel in the image
-    if mf_locations is None:
-        mf_locations = list(range(imshape[0]*imshape[1]))
-    # if region_pix is not set, assume the whole image was used for KLIP
-    if region_pix is None:
-        region_pix = list(range(imshape[0]*imshape[1]))
-    
-    mf_template_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
-    mf_pickout_cube = np.zeros_like(mf_template_cube) # this is used to pick out the PSF *after* KLIP
-
-    # inject the instrument PSFs - this cannot be done on a flattened cube
-    # only inject PSFs at the specified positions
-    for i, p in enumerate(mf_locations):
-        center = np.unravel_index(p, imshape) # injection location
-        mf_template_cube[i] = utils.inject_psf(np.zeros(imshape), psf, center)
-        mf_pickout_cube[i]  = utils.inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
-    # flatten all the MF images
-    mf_flat_template = np.array([i.ravel() for i in mf_template_cube])
-    mf_flat_pickout =  np.array([i.ravel() for i in mf_pickout_cube])
-    # find the klip-modified PSFs
-    mf_flat_template_klipped = np.zeros_like(mf_flat_template)
-    # when you apply KLIP, be careful only to use the selected region of the image
-
-    # leave only the region of interest in the images
-    mf_flat_template *= mf_flat_pickout
-    return mf_flat_template
 
 ############################
 # APPLYING MATCHED FILTERS #
