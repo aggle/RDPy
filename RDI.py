@@ -389,7 +389,7 @@ class ReferenceCube(object):
                                         argdict['double_project'])
         return vals
     
-    def generate_kl_basis(self, **kwargs):
+    def generate_kl_basis(self, return_vals=False, **kwargs):
         """
         This is a wrapper for RDI.generate_kl_basis that defaults to the
         reference cube properties as arguments
@@ -405,7 +405,11 @@ class ReferenceCube(object):
                                  kl_max = argdict['kl_max'],
                                  return_evecs = argdict['return_evecs'],
                                  return_evals = argdict['return_evals'])
-        return vals
+        if return_vals is True:
+            return vals
+        else:
+            self.kl_basis = vals
+                    
         
     def remove_ref_from_kl_basis(self, ref_index, **kwargs):
         """
