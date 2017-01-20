@@ -72,7 +72,7 @@ full_rc.n_basis = np.arange(20,len(reference_cube), 10)
 full_rc.generate_kl_basis()
 # matched filter
 # kl-basis matched filter
-full_rc.generate_matched_filter(mf_locations=np.expand_dims(test_pos, 0))
+full_rc.generate_matched_filter(mf_locations=np.expand_dims(test_pos, 0), mean_subtract=True)
 #full_rc.matched_filter * NICMOS.frac_flux
 mf_throughput = MF.fmmf_throughput_correction(full_rc.matched_filter[:, full_rc.flat_region_ind], 
                                               full_rc.kl_basis, 
@@ -88,7 +88,7 @@ class MyTest(unittest.TestCase):
     def test_apply_ones_filter(self):
         """Test that when you apply a matched filter, you get back the signal you expect."""
         # apply ones filter to the test images
-        mf_result = MF.apply_matched_filter(ones_matched_filter, utils.flatten_image_axes(test_cube), scale=1/NICMOS.frac_flux)
+        mf_result = MF.apply_matched_filter(ones_matched_filter, utils.flatten_image_axes(test_cube))
         self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 1e-3), True, "ones_filter does not give back right answer")
 
     def test_apply_kl_filter_check_magnitude(self):
@@ -112,17 +112,9 @@ class MyTest(unittest.TestCase):
                                             throughput_corr = mf_throughput,
                                             scale=1)
         ratios = mf_result/np.expand_dims(test_fluxes,-1)
-        self.assertEqual(np.any(np.diff(ratios) > 0), True, "MF slope never flattens out")
+        print(ratios.shape)
+        self.assertEqual(np.any(np.diff(ratios[int(len(ratios)/2):]) >= 0), True, "MF slope never flattens out")
 
-    def test_oversubtraction(self):
-        klsub = RDI.klip_subtract_with_basis(img_flat=utils.flatten_image_axes(test_cube),
-                                             kl_basis=full_rc.kl_basis,
-                                             n_bases=full_rc.n_basis)
-
-        psf2 = np.linalg.norm(full_rc.matched_filter)**2
-        mf_klproj = np.dot(full_rc.matched_filter, full_rc.kl_basis.T)
-        oversub1 = psf2 - np.array([np.nansum(mf_klproj[...,:n], axis=-1) for n in full_rc.n_basis])
-        oversub2 =  np.dot(klsub, full_rc.matched_filter.T)/test_fluxes[:,None,None]
         
 
 if __name__=="__main__":

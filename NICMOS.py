@@ -133,9 +133,9 @@ class NICMOS(Instrument):
         center = np.array(center)
         rad = np.int(np.floor(diam/2.))
         init_flux = np.nansum(psf)
-        psf = psf[center[0]-rad:center[0]+rad + diam%2,
-                  center[1]-rad:center[1]+rad + diam%2]
-        final_flux = np.nansum(psf)
-        self.psf = psf
+        psf_stamp = psf[center[0]-rad:center[0]+rad + diam%2,
+                        center[1]-rad:center[1]+rad + diam%2].copy()
+        final_flux = np.nansum(psf_stamp)
+        self.psf = psf_stamp
         self.frac_flux = final_flux/np.float(init_flux)
     

@@ -11,7 +11,9 @@ import RDI
 ##############################
 
 def generate_matched_filter(psf, kl_basis=None, n_bases=None,
-                            imshape=None, region_pix=None, mf_locations=None):
+                            imshape=None,
+                            region_pix=None,
+                            mf_locations=None):
     """
     generate a matched filter with a model of the PSF. For now we assume that 
     the KL basis covers the entire image.
@@ -25,6 +27,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
             if None, assumed to cover the whole image
         mf_locations: the pixel coordinates of the locations to apply the matched filter.
             Can be raveled coordinates OR 2xNloc array (then, must provide imshape)
+        offset: apply a linear shift to the matched filter (e.g. mean subtraction)
     Returns:
         MF: [Nloc x [Nkl x [Npix]]] cube of flattened matched filters. 
             The first index tells you what pixel in the image it corresponds to, 
@@ -85,7 +88,9 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
             mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
                                                       kl_basis, n_bases)
             MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
-            MF = roll_axis(MF,0,2) # put the locations axis first 
+            MF = roll_axis(MF,0,2) # put the locations axis first
+    # remember to subtract the mean
+    MF = MF-np.expand_dims(np.nanmean(MF, axis=-1),-1)
     return MF
 
 
