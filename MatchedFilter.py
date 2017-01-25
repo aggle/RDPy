@@ -129,10 +129,13 @@ def apply_matched_filter(images, matched_filter=None, throughput_corr=False, sca
     mf_map = np.dot(matched_filter, np.rollaxis(images, -1, -2)).T
     # undo the funky linear algebra reshaping
     mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
-    # if throughput corrections are provided, apply them to the matched filter results
-    if not isinstance(throughput_corr, bool):
-        mf_map /= throughput_corr
 
+    # if throughput corrections are provided, apply them to the matched filter results
+    # otherwise, use the matched filter norm
+    if isinstance(throughput_corr, bool):
+        throughput_corr = np.linalg.norm(matched_filter, axis=-1)**2
+    mf_map /= throughput_corr
+    
     # multiply the remaining scale factors
     mf_map *= scale
     return np.squeeze(mf_map)

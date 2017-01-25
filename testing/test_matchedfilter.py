@@ -88,19 +88,32 @@ class MyTest(unittest.TestCase):
     def test_apply_ones_filter(self):
         """Test that when you apply a matched filter, you get back the signal you expect."""
         # apply ones filter to the test images
-        mf_result = MF.apply_matched_filter(ones_matched_filter, utils.flatten_image_axes(test_cube))
+        mf_result = MF.apply_matched_filter(ones_matched_filter,
+                                            utils.flatten_image_axes(test_cube))
         self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 1e-3), True, "ones_filter does not give back right answer")
 
+    def test_apply_injetion_random_bgnd(self):
+        """Apply MF to an injection on a random background"""
+        test_input = test_cube + np.random.normal(0,1,test_cube.shape[1:])
+        mf_result = MF.apply_matched_filter(full_rc.matched_filter,
+                                            utils.flatten_image_axes(test_input),
+                                            throughput_corr = np.linalg.norm(full_rc.matched_filter)**2,
+                                            scale=1.)
+        print(mf_result)
+        print(np.abs(mf_result/test_fluxes)-1)
+        self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 0.5), True, "MF fails on random noise background")
+        
     def test_apply_kl_filter_check_magnitude(self):
         """Apply MF to the KL-subtracted image"""
-        klsub = RDI.klip_subtract_with_basis(img_flat=utils.flatten_image_axes(test_cube),
+        test_input = test_cube
+        klsub = RDI.klip_subtract_with_basis(img_flat=utils.flatten_image_axes(test_input),
                                              kl_basis=full_rc.kl_basis,
                                              n_bases=full_rc.n_basis)
         mf_result = MF.apply_matched_filter(klsub,
                                             full_rc.matched_filter,
                                             throughput_corr = mf_throughput,
                                             scale=1)
-        self.assertEqual(np.all(np.abs(mf_result/np.expand_dims(test_fluxes,-1)-1) < 0.05), True, "MF with KL sub values wrong")
+        self.assertEqual(np.all(np.abs(mf_result/np.expand_dims(test_fluxes,-1)-1) < 0.01), True, "MF with KL sub values wrong")
 
     def test_apply_kl_filter_check_slope(self):
         """Check that the flux goes monotonically down"""
@@ -112,8 +125,8 @@ class MyTest(unittest.TestCase):
                                             throughput_corr = mf_throughput,
                                             scale=1)
         ratios = mf_result/np.expand_dims(test_fluxes,-1)
-        print(ratios.shape)
-        self.assertEqual(np.any(np.diff(ratios[int(len(ratios)/2):]) >= 0), True, "MF slope never flattens out")
+        #print(ratios.shape)
+        self.assertEqual(np.all(np.diff(ratios[int(len(ratios)/2):]) > 0), False, "MF slope never flattens out")
 
         
 
