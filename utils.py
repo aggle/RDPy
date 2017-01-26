@@ -196,34 +196,10 @@ def flatten_leading_axes(array, axis=-1):
 #################
 # PSF INJECTION #
 #################
-def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
-    """
-    Inject a PSF into an image at a location given by center. Optional: scale PSF
-    Input:
-        img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
-        psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
-             must have same 1st dimension as img 
-        center: center of the injection in the image (can be more than one location)
-        scale_flux: multiply the PSF by this number. If this is an array,
-             img and psf will be tiled to match its length
-             if scale_flux is None, don't scale psf
-        subtract_mean: (False) mean-subtract before returning
-        return_flat: (False) flatten the array along the pixels axis before returning
-    Returns:
-       injected_img: 2-D image or 3D cube with the injected PSF(s)
-       injection_psf: (if return_psf=True) 2-D normalized PSF full image
-    """
-
-    if np.ndim(center) == 1:
-        injected_psf  = _inject_psf(img, psf, center, scale_flux, subtract_mean, return_flat)
-    elif np.ndim(center) > 1:
-        injected_psf = np.sum(np.array([_inject_psf(img, psf, c, scale_flux, subtract_mean, return_flat)
-                                        for c in center]), axis=0)
-    return injected_psf
-    
 def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
     """
-    Inject a PSF into an image at a location given by center. Optional: scale PSF
+    ### use inject_psf() as a wrapper, do not call this function directly ###
+    Inject a PSF into an image at a location given by center. Optional: scale PSF.
     Input:
         img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
         psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
@@ -240,6 +216,8 @@ def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_f
     """
     if scale_flux is None:
         scale_flux = np.array([1])
+    elif np.ndim(scale_flux) == 0:
+        scale_flux = np.array([scale_flux])
     scale_flux = np.array(scale_flux)
 
     # get the right dimensions
@@ -271,6 +249,35 @@ def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_f
     #if return_psf is True:
     #    return full_injection, injection_psf
     return np.squeeze(full_injection)
+
+def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+    """
+    Inject a PSF into an image at a location given by center. Optional: scale PSF
+    The PSF is injected by *adding* it to the provided image, not by replacing the pixels
+    Input:
+        img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
+        psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
+             must have same 1st dimension as img 
+        center: center of the injection in the image (can be more than one location)
+        scale_flux: multiply the PSF by this number. If this is an array,
+             img and psf will be tiled to match its length
+             if scale_flux is None, don't scale psf
+        subtract_mean: (False) mean-subtract before returning
+        return_flat: (False) flatten the array along the pixels axis before returning
+    Returns:
+       injected_img: 2-D image or 3D cube with the injected PSF(s)
+       injection_psf: (if return_psf=True) 2-D normalized PSF full image
+    """
+
+    injected_psf=None
+    if np.ndim(center) == 1:
+        injected_psf  = _inject_psf(img, psf, center, scale_flux, subtract_mean, return_flat)
+    elif np.ndim(center) > 1:
+        injected_psf = np.sum(np.array([_inject_psf(img, psf, c, scale_flux,
+                                                    subtract_mean, return_flat)
+                                        for c in center]), axis=0)
+    return injected_psf
+    
 
 def inject_region(flat_img, flat_psf, scaling=1, subtract_mean=False):
     """

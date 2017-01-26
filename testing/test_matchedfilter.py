@@ -81,7 +81,6 @@ mf_throughput = MF.fmmf_throughput_correction(full_rc.matched_filter[:, full_rc.
 ones_matched_filter = np.ones((1, full_rc.npix_region))
 
 
-
 class MyTest(unittest.TestCase):
     """Figure out the throughput problem!"""
 
@@ -89,19 +88,19 @@ class MyTest(unittest.TestCase):
         """Test that when you apply a matched filter, you get back the signal you expect."""
         # apply ones filter to the test images
         mf_result = MF.apply_matched_filter(ones_matched_filter,
-                                            utils.flatten_image_axes(test_cube))
+                                            utils.flatten_image_axes(test_cube),
+                                            throughput_corr=1)
         self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 1e-3), True, "ones_filter does not give back right answer")
 
     def test_apply_injetion_random_bgnd(self):
         """Apply MF to an injection on a random background"""
+        np.random.seed(1234)
         test_input = test_cube + np.random.normal(0,1,test_cube.shape[1:])
         mf_result = MF.apply_matched_filter(full_rc.matched_filter,
                                             utils.flatten_image_axes(test_input),
                                             throughput_corr = np.linalg.norm(full_rc.matched_filter)**2,
                                             scale=1.)
-        print(mf_result)
-        print(np.abs(mf_result/test_fluxes)-1)
-        self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 0.5), True, "MF fails on random noise background")
+        self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 0.05), True, "MF fails on random noise background")
         
     def test_apply_kl_filter_check_magnitude(self):
         """Apply MF to the KL-subtracted image"""
