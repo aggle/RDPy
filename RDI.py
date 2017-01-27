@@ -547,6 +547,7 @@ def sort_squared_distance(targ, references):
 
 def make_image_from_region(region, indices, shape):
     """
+    ### wrapper for utils.make_image_from_region, kept here for backwards compatibilty ###
     put the flattened region back into an image
     Input:
         region: [Nimg,[Nx,[Ny...]]] x Npix array (any shape as long as the last dim is the pixels)
@@ -557,21 +558,7 @@ def make_image_from_region(region, indices, shape):
         img: an image (or array of) with dims `shape` and with nan's in 
             whatever indices are not explicitly set
     """
-    oldshape = np.copy(region.shape)
-    img = np.ravel(np.zeros(shape))*np.nan
-    # handle the case of region being a 2D array by extending the img axes
-    if region.ndim > 1:
-        # assume last dimension is the pixel
-        region = np.reshape(region, (reduce(lambda x,y: x*y, oldshape[:-1]), oldshape[-1]))
-        img = np.tile(img, (region.shape[0], 1))
-    else:
-        img = img[None,:]
-    # fill in the image
-    img[:,indices] = region
-    # reshape and get rid of extra axes, if any
-    img = np.squeeze(img.reshape(list(oldshape[:-1])+list(shape)))
-                            
-    return img
+    return utils.make_image_from_region(region, indices. shape)
 
 
 def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=False):
