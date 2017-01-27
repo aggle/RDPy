@@ -27,6 +27,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
             if None, assumed to cover the whole image
         mf_locations: the pixel coordinates of the locations to apply the matched filter.
             Can be raveled coordinates OR 2xNloc array (then, must provide imshape)
+        raveled_ind [False]: if True, treat the mf_location coordinates as for a raveled array
         offset: apply a linear shift to the matched filter (e.g. mean subtraction)
     Returns:
         MF: [Nloc x [Nkl x [Npix]]] cube of flattened matched filters. 
@@ -40,8 +41,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         mf_locations = list(range(imshape[0]*imshape[1]))
     if np.ndim(mf_locations) == 0:
         mf_locations = [mf_locations]
-    if np.ndim(mf_locations) == 2:
-        mf_locations = np.ravel_multi_index(mf_locations.T, dims=imshape)
+    mf_locations = np.array(mf_locations)
+
     # if region_pix is not set, assume the whole image was used for KLIP
     if region_pix is None:
         region_pix = list(range(imshape[0]*imshape[1]))
@@ -49,14 +50,20 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         n_bases = np.expand_dims(n_bases,0)
 
     # this stores the PSFs
-    mf_template_cube = np.zeros((len(mf_locations), imshape[0], imshape[1]))
+    mf_template_cube = np.zeros((np.size(mf_locations), imshape[0], imshape[1]))
     # this is used to pick out the desired PSF region *after* KLIP
-    mf_pickout_cube = np.zeros((len(mf_locations),imshape[0],imshape[1]))
+    mf_pickout_cube = np.zeros((np.size(mf_locations),imshape[0],imshape[1]))
     
     # inject the instrument PSFs - this cannot be done on a flattened cube
     # only inject PSFs at the specified positions
     # inject_psf will automatically work across the n_bases axis
-    for i, p in enumerate(mf_locations):
+    try:
+        for i, p in enumerate(mf_locations):
+            center = np.unravel_index(p, imshape) # injection location
+            mf_template_cube[i] = utils.inject_psf(np.zeros(imshape), psf, center)
+            mf_pickout_cube[i]  = utils.inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
+    except TypeError: # case for only one location
+        i,p = 0,mf_locations
         center = np.unravel_index(p, imshape) # injection location
         mf_template_cube[i] = utils.inject_psf(np.zeros(imshape), psf, center)
         mf_pickout_cube[i]  = utils.inject_psf(mf_pickout_cube[i], np.ones_like(psf), center)
