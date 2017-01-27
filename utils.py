@@ -192,19 +192,26 @@ def flatten_leading_axes(array, axis=-1):
     newshape = [reduce(lambda x,y: x*y, oldshape[:axis])] + list(oldshape[axis:])
     return np.reshape(array, newshape)
 
-def make_image_from_region(region, indices, shape):
+def make_image_from_region(region, indices=None, shape=None):
     """
-    put the flattened region back into an image
+    put the flattened region back into an image. if no indices or shape are specified, assumes that
+    the region of N pixels is a square with Nx = Ny = sqrt(N)
     Input:
         region: [Nimg,[Nx,[Ny...]]] x Npix array (any shape as long as the last dim is the pixels)
-        indices: Npix array of flattened pixel coordinates 
+        indices: [None] Npix array of flattened pixel coordinates 
                  corresponding to the region
-        shape: image shape
+        shape: [None] image shape
     Returns:
         img: an image (or array of) with dims `shape` and with nan's in 
             whatever indices are not explicitly set
     """
     oldshape = np.copy(region.shape)
+    if shape is None:
+        Npix = oldshape[-1]
+        Nside = np.int(np.sqrt(Npix))
+        indices = np.array(range(Npix))
+        shape = (Nside, Nside)
+        
     img = np.ravel(np.zeros(shape))*np.nan
     # handle the case of region being a 2D array by extending the img axes
     if region.ndim > 1:

@@ -545,7 +545,7 @@ def sort_squared_distance(targ, references):
     return sorted_image_indices
 
 
-def make_image_from_region(region, indices, shape):
+def make_image_from_region(region, indices=None, shape=None):
     """
     ### wrapper for utils.make_image_from_region, kept here for backwards compatibilty ###
     put the flattened region back into an image
