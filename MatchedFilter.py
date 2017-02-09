@@ -97,7 +97,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
             MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
             MF = roll_axis(MF,0,2) # put the locations axis first
     # remember to subtract the mean
-    MF = MF-np.expand_dims(np.nanmean(MF, axis=-1),-1)
+    MF = MF - np.expand_dims(np.nanmean(MF, axis=-1),-1)
+
     return MF
 
 
