@@ -4,7 +4,7 @@ Matched Filter stuff
 
 import numpy as np
 import utils
-import RDI
+import RDIklip as RK
 
 ##############################
 # GENERATING MATCHED FILTERS #
@@ -86,7 +86,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         for i in nloc:
             psf_template = mf_flat_template[i,region_pix]
             # don't be intimidated - fancy python crap to match array dims
-            tmp = np.tile(RDI.klip_subtract_with_basis(psf_template,
+            tmp = np.tile(RK.klip_subtract_with_basis(psf_template,
                                                        kl_basis,
                                                        n_bases),
                           np.ones_like(mf_flat_template.shape))
@@ -260,8 +260,23 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
 ##############
 # THROUGHPUT #
 ##############
-
 def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
+    """
+    Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
+    Arguments:
+        psfs: the flattened model psfs (Nloc, Region_pix)
+        kl_basis: the KL basis for projection (KLmax, Region_pix)
+        n_bases [None]: list of KL_max values
+    returns:
+        [(n_basis x) Nloc] throughput correction, per KLmax per location
+    """
+    # do KLIP on the PSFs, then take the normalization
+    # one throughput for each psf. Final shape: Nloc x N_klmax
+    psfs_klsub = RK.klip_subtract_with_basis(psfs, kl_basis, n_bases)
+    normed_psfs = np.linalg.norm(psfs_klsub, axis=-1)**2
+    return np.squeeze(normed_psfs.T) # put the KL axis first, location aka pixel axis last
+
+def fmmf_throughput_correction_old(psfs, kl_basis=None, n_bases=None):
     """
     Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
     Arguments:

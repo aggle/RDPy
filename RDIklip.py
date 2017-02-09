@@ -1,10 +1,19 @@
 """
 All functions that use KLIP
 """
+import sys
+import os
 
 import numpy as np
+import numpy.fft as fft
+
+import scipy.linalg as la
+import scipy.ndimage as ndimage
+
+from functools import reduce
+
 import utils
-import RDI
+
 
 
 def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False):
@@ -78,6 +87,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     """
     # reshape input
     # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
+    leading_shape = img_flat.shape[:-1]
     if img_flat.ndim == 1:
         # add an empty axis to the front
         img_flat = np.expand_dims(img_flat, 0)
@@ -113,9 +123,11 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
         kl_sub -= np.array([np.dot(np.dot(kl_sub[i], kl_basis[:n_bases[i]].T),
                                    kl_basis[:n_bases[i]])
                             for i in range(len(n_bases))])
+
+    # put it back in the original shape
     # the KL axis ends up in front. We want to put it just before the image axis
     kl_sub = np.rollaxis(kl_sub, 0, -1)
-    return np.squeeze(kl_sub)
+    new_shape = list(leading_shape) + list(kl_sub.shape[-2:])
+    return np.squeeze(kl_sub.reshape(new_shape))
     #kl_sub = np.reshape(kl_sub, new_shape)
     #return np.squeeze(kl_sub)
-
