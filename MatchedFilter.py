@@ -278,6 +278,7 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
 
 def fmmf_throughput_correction_old(psfs, kl_basis=None, n_bases=None):
     """
+    DEPRECATED
     Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
     Arguments:
         psfs: the flattened model psfs (Nloc, Region_pix)
