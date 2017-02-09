@@ -18,6 +18,7 @@ from functools import reduce
 
 import utils
 import MatchedFilter as MF
+import RDIklip as RK
 
 class ReferenceCube(object):
     """
@@ -545,6 +546,8 @@ def sort_squared_distance(targ, references):
     return sorted_image_indices
 
 
+make_image_from_region = utils.make_image_from_region
+''' Moved to utils.py
 def make_image_from_region(region, indices=None, shape=None):
     """
     ### wrapper for utils.make_image_from_region, kept here for backwards compatibilty ###
@@ -559,8 +562,10 @@ def make_image_from_region(region, indices=None, shape=None):
             whatever indices are not explicitly set
     """
     return utils.make_image_from_region(region, indices. shape)
+'''
 
-
+klip_subtract_with_basis = RK.klip_subtract_with_basis
+''' Moved to RDIklip.pu
 def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=False):
     """
     If you already have the KL basis, do the klip subtraction
@@ -619,7 +624,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     return np.squeeze(kl_sub)
     #kl_sub = np.reshape(kl_sub, new_shape)
     #return np.squeeze(kl_sub)
-
+'''
 
     
 
@@ -629,6 +634,8 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
 ################
 ### KL BASIS ###
 ################
+generate_kl_basis = RK.generate_kl_basis
+'''
 def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False):
     """
     Generate the KL basis from a set of reference images. Always returns the full KL basis
@@ -681,147 +688,4 @@ def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False
     if len(return_objs) == 1:
         return_objs = return_objs[0]
     return return_objs
-    
-
-def old_generate_kl_basis(references=None, kl_max=None, return_evecs=False, return_evals=False):
-    """
-    Generate the KL basis from a set of reference images. Always returns the full KL basis
-    This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
-    Args:
-        references: Nimg x Npix flattened array of reference images
-        kl_max [None]: number of KL modes to return. Default: all
-        return_evecs [False]: if True, return the eigenvectors of the covar matrix
-        return_evals [False]: if true, return the eigenvalues of the eigenvectors
-    Returns:
-        kl_basis: Full KL basis (up to kl_max modes if given; default len(references))
-        evecs: covariance matrix eigenvectors, if desired
-        evals: eigenvalues of the eigenvectors, if desired
-    """
-    nrefs, npix = references.shape
-    ref_psfs_mean_sub = references - np.expand_dims(np.nanmean(references, axis=-1), -1)
-    # set nan's to 0 so that they don't contribute to the covar matrix, and don't mess up numpy
-    nan_refs = np.where(np.isnan(references))
-    ref_psfs_mean_sub[nan_refs] = 0
-
-    # check kl_max cases: cannot be greater than the number of references
-    # if kl_max isn't provided
-    if kl_max is None:
-        kl_max = nrefs-1
-    # if it's a number, make sure it's less than nrefs
-    elif kl_max >= nrefs:
-        kl_max = nrefs-1
-    else: # whatever else, just use all the kl modes
-        pass #kl_max = nrefs-1
-    
-    # generate the covariance matrix
-    covar = np.cov(ref_psfs_mean_sub) * (npix-1) # undo numpy's normalization
-    evals, evecs = la.eigh(covar, eigvals=(0,kl_max-1))
-    
-    # reverse the evals and evecs to have the biggest first
-    evals = np.copy(evals[::-1])
-    evecs = np.copy(evecs[:,::-1], order='F')
-    
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T / np.sqrt(evals[:,None])
-    check_nans = np.any(evals <= 0)
-    if check_nans:
-        neg_evals = (np.where(evals <= 0))[0]
-        kl_basis[:,neg_evals] = 0
-
-    # take care of nans
-    if check_nans:
-        kl_basis[:, neg_evals] = 0
-    
-    return_objs = [kl_basis]
-    if return_evecs:
-        return_objs.append(evecs)
-    if return_evals:
-        return_objs.append(evals)
-    if len(return_objs) == 1:
-        return_objs = return_objs[0]
-    return return_objs
-
-
-def remove_ref_from_kl_basis(ref_index, references, kl_basis=None, evecs=None, evals=None):
-    """
-    Subtract the contribution of a reference PSF from the KL basis
-    Args:
-        references: set of reference images Nref x Npix (i.e. flattened)
-        ref_index: index of the ref image to remove from the basis
-        kl_basis [None]: the full kl basis Nref x Npix
-        evecs [None]: eigenvectors of the covariance matrix
-        evals [None]: eigenvalues of the covariance matrix
-        If kl_basis, evecs, and evals are None, regenerate them
-    Returns:
-        new_basis: KL basis with the contributions from one image removed
-    """
-    if np.any([i is None for i in [kl_basis, evecs, evals]]):
-        kl_basis, evecs, evals = generate_kl_basis(references,
-                                                   return_evecs=True,
-                                                   return_evals=True)
-    refs_mean_sub = references - np.mean(references, axis=-1)[:,None]
-    n_modes = len(evals)
-    weights = evecs[ref_index,:]/np.sqrt(evals)
-    contributions = weights[:,None] * refs_mean_sub
-    new_basis = kl_basis - contributions
-    return new_basis
-
-############################
-# REFERENCE CUBE ITERATION #
-############################
-def iterate_references(references, n_bases, matched_filter=None, mf_locations=None):
-    """
-    Takes a reference cube and returns an array of the whole klipped thing, and the normalizations
-    """
-    for ind in list(range(len(references))):
-        rc_ref_indices = list(range(len(references)))
-        rc_targ_index = rc_ref_indices.pop(ind)
-        tmp_targ = references[rc_targ_index].copy()
-        references = references[rc_ref_indices]
-        rc = RDI.ReferenceCube(references, target=tmp_targ, region_mask=planet_mask, instrument=NICMOS)
-        ref_klipped_flat, kl_basis, evals, evecs = klip.klip_math(rc.target_region, rc.flat_cube_region, 
-                                                                  numbasis=np.array(n_bases), 
-                                                                  return_basis_and_eig=True)
-        rc.kl_basis = kl_basis
-        rc.n_basis = n_bases
-        
-        ref_klflat = RDI.klip_subtract_with_basis(rc.target_region, rc.kl_basis, 
-                                                  rc.n_basis, double_project=True)
-        ref_klflat_img = RDI.make_image_from_region(ref_klflat, rc.flat_region_ind, rc.imshape)
-        
-        # Set up and apply matched filter
-        rc.matched_filter = master_mf
-        rc.matched_filter_locations = rc.flat_region_ind #[np.ravel_multi_index(planet_pix, rc.imshape)]
-        ref_mf_fluxes.append(rc.apply_matched_filter_to_image(ref_klflat_img))
-        mf_norm = MF.fmmf_throughput_correction(rc.matched_filter[:,rc.flat_region_ind], 
-                                                 rc.kl_basis, 
-                                                 rc.n_basis)
-        ref_mf_fluxes[-1] = utils.flatten_image_axes(ref_mf_fluxes[-1])[:,rc.flat_region_ind]/mf_norm
-
-        
-
-
-def apply_klip_and_mf(img_flat, img_shape, kl_basis, kl_pix, n_bases=None, double_project=False,
-                      matched_filter=None, mf_locations=None, throughput_corr=False, flux_scale=1):
-    """
-    Wrapper that handles both doing KLIP on an image and getting the flux with a matched filter.
-    Args:
-      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
-      img_shape: 2-D Nrow, Ncol image shape
-      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
-      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
-          If None, use full basis
-      double_project: apply KL twice (useful for some FMMF cases)
-      matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
-      mf_locations: flattened pixel indices of the pixels to apply the matched filter
-      throughput_corr: [False] to apply throughput correction, pass an array of normalization factors 
-            that matches the shape of the matched filter
-      flux_scale: any additional scaling you want to apply to the matched filter
-
-    Returns:
-      mf_map: image with the matched filter results
-    """
-    kl_sub = klip_subtract_with_basis(img_flat, kl_basis, n_bases, double_project)
-    kl_sub_img = make_image_from_region(kl_sub, kl_pix, img_shape)
-    mf = MF.apply_matched_filter_to_images(kl_sub_img, matched_filter, locations=mf_locations,
-                                           throughput_corr=throughput_corr, scale=flux_scale)
-    return mf
+'''
