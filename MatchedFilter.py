@@ -108,7 +108,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 
 def apply_matched_filter(images, matched_filter=None, throughput_corr=False, scale=1):
     """
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution, and that the regions correspond to each other.
+    Apply a matched filter to an image. It is assumed that the image and the matched filter have already 
+    been sampled to the same resolution, and that the regions correspond to each other.
     Arguments:
         image: 1-D flattened image or N-D array of images where the last axis 
           is the flattened region of interest. The image(s) and the matched 
@@ -116,6 +117,8 @@ def apply_matched_filter(images, matched_filter=None, throughput_corr=False, sca
           Tip: use utils.flatten_image_axes(images) to call on 2-D images
         matched_filter: Cube of flattened matched filters, one MF per pixel
           where we want to know the flux.
+        throughput_corr: throughput correction for the matched filter. If None, then
+          defaults to |MF|^2
         scale: any additional scaling you want to apply to the matched filter
     Returns:
         mf_map: (array of) images where the matched filter has been applied at each pixel
@@ -272,8 +275,11 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     """
     # do KLIP on the PSFs, then take the normalization
     # one throughput for each psf. Final shape: Nloc x N_klmax
-    psfs_klsub = RK.klip_subtract_with_basis(psfs, kl_basis, n_bases)
-    normed_psfs = np.linalg.norm(psfs_klsub, axis=-1)**2
+    if kl_basis is None:
+        psfs_modded = psfs
+    else:
+        psfs_modded = RK.klip_subtract_with_basis(psfs, kl_basis, n_bases)
+    normed_psfs = np.linalg.norm(psfs_modded, axis=-1)**2
     return np.squeeze(normed_psfs.T) # put the KL axis first, location aka pixel axis last
 
 def fmmf_throughput_correction_old(psfs, kl_basis=None, n_bases=None):
