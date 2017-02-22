@@ -436,7 +436,7 @@ class ReferenceCube(object):
         reference cube properties as arguments
         Default behavior: returns nothing: sets self.matched_filter
         If return_mf is True, then returns matched filter
-        For more help, see RDI.generate_matched_filter()
+        For more help, see MatchedFilter.generate_matched_filter()
         """
         argdict = {}
         argdict['psf'] = kwargs.get('psf',self.instrument.psf)

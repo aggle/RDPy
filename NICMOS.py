@@ -120,22 +120,25 @@ class NICMOS(Instrument):
     def frac_flux(self, newval):
         self._frac_flux = newval
 
-    def load_psf(self, psf, center, diam=11):
+    def load_psf(self, psf, center, rad=10, return_psf=False):
         """
         Get a PSF centered at center and cut out a section of it
         Inputs:
             psf: image of the psf
             center: center in (row, col) of the psf in the image
             diam: box size of the PSF (default 11)
+            return_psf [False]: if True, return the psf. 
         Returns:
             returns nothing but sets self.psf to a diam x diam cutout of the PSF
         """
         center = np.array(center)
-        rad = np.int(np.floor(diam/2.))
+        #rad = np.int(np.floor(diam/2.)) + diam%2
         init_flux = np.nansum(psf)
-        psf_stamp = psf[center[0]-rad:center[0]+rad + diam%2,
-                        center[1]-rad:center[1]+rad + diam%2].copy()
+        psf_stamp = psf[center[0]-rad : center[0]+rad+1, #+ diam%2,
+                        center[1]-rad : center[1]+rad+1].copy()#, + diam%2].copy()
         final_flux = np.nansum(psf_stamp)
         self.psf = psf_stamp
         self.frac_flux = final_flux/np.float(init_flux)
+        if return_psf is True:
+            return psf_stamp.copy()
     

@@ -8,18 +8,18 @@ from functools import reduce
 
 
 # general rotation matrix
-def rot_mat(angle):
-    """
-    Generate a rotation matrix for a given angle in degrees. 
-    It is designed to operate on images in python and rotate them
-    such that north is up and east is to the left (i.e. CCW).
-    Args:
-        angle: rotation angle in degrees
-    Returns: 
-        2x2 rotation matrix to rotate a 2-D vector by the given angle
-    """
+#def rot_mat(angle):
+#    """
+#    Generate a rotation matrix for a given angle in degrees. 
+#    It is designed to operate on images in python and rotate them
+#    such that north is up and east is to the left (i.e. CCW).
+#    Args:
+#        angle: rotation angle in degrees
+#    Returns: 
+#        2x2 rotation matrix to rotate a 2-D vector by the given angle
+#    """
 rot_mat = lambda angle: np.array([[np.cos(angle*np.pi/180), np.sin(angle*np.pi/180)],
-                                 [-np.sin(angle*np.pi/180), np.cos(angle*np.pi/180)]])
+                                  [-np.sin(angle*np.pi/180), np.cos(angle*np.pi/180)]])
 
 
 ###############
@@ -38,10 +38,13 @@ def get_stamp_coordinates(center, drow, dcol, imshape):
         img_coords: the stamp indices for the full image array (img[img_coords_for_stamp])
         stamp_coords: the stamp indices for selecting the part of the stamp that goes in the image (stamp[stamp_coords])
     """
-    colrad = np.int(np.floor(dcol))/2
-    rowrad = np.int(np.floor(drow))/2
+    # handle odd and even: 1 if odd, 0 if even
+    oddflag = np.array((dcol%2, drow%2))
+    colrad = np.int(np.floor(dcol))/2 
+    rowrad = np.int(np.floor(drow))/2 
+
     rads = np.array([rowrad, colrad], dtype=np.int)
-    center = np.array([center[0],center[1]],dtype=np.int)
+    center = np.array([center[0],center[1]],dtype=np.int) #+ oddflag
     img = np.zeros(imshape)
     stamp = np.ones((drow,dcol))
     full_stamp_coord = np.indices(stamp.shape) + center[:,None,None]  - rads[:,None,None]
@@ -51,8 +54,8 @@ def get_stamp_coordinates(center, drow, dcol, imshape):
     row_hb,col_hb = imshape
     
     rowcheck_lo, colcheck_lo = (center - rads)
-    rowcheck_hi, colcheck_hi = ((imshape-center) - rads)    
-
+    rowcheck_hi, colcheck_hi = ((imshape-center) - rads) - oddflag[::-1]
+    
     row_start, col_start = 0,0
     row_end, col_end = stamp.shape
     
@@ -273,8 +276,7 @@ def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_f
     injection_img[:,injection_pix[0], injection_pix[1]] += psf_tiled[:,psf_pix[0], psf_pix[1]]*scale_flux[:,None,None]
     full_injection = injection_img + img_tiled
     if subtract_mean is True:
-        full_injection = (full_injection.T - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)).T
-        injection_psf = injection_psf - np.nanmean(injection_psf)
+        full_injection = full_injection - np.nanmean(np.nanmean(full_injection, axis=-1),axis=-1)[:,None,None]
     if return_flat is True:
         shape = full_injection.shape
         if full_injection.ndim == 2:

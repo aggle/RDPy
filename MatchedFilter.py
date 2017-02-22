@@ -26,7 +26,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         region_pix: the raveled image pixel indices covered by the KL basis. 
             if None, assumed to cover the whole image
         mf_locations: the pixel coordinates of the locations to apply the matched filter.
-            Can be raveled coordinates OR 2xNloc array (then, must provide imshape)
+            Can be raveled coordinates OR [Nloc x 2] array (then, must provide imshape)
         raveled_ind [False]: if True, treat the mf_location coordinates as for a raveled array
         offset: apply a linear shift to the matched filter (e.g. mean subtraction)
     Returns:
@@ -41,6 +41,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         mf_locations = list(range(imshape[0]*imshape[1]))
     if np.ndim(mf_locations) == 0:
         mf_locations = [mf_locations]
+    if np.ndim(mf_locations) == 2:
+        mf_locations = np.ravel_multi_index(np.array(mf_locations).T, imshape)
     mf_locations = np.array(mf_locations)
 
     # if region_pix is not set, assume the whole image was used for KLIP
