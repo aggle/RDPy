@@ -10,6 +10,7 @@ import RDIklip as RK
 # GENERATING MATCHED FILTERS #
 ##############################
 
+
 def generate_matched_filter(psf, kl_basis=None, n_bases=None,
                             imshape=None,
                             region_pix=None,
@@ -54,8 +55,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
     # this stores the PSFs
     mf_template_cube = np.zeros((np.size(mf_locations), imshape[0], imshape[1]))
     # this is used to pick out the desired PSF region *after* KLIP
-    mf_pickout_cube = np.zeros((np.size(mf_locations),imshape[0],imshape[1]))
-    
+    mf_pickout_cube = np.zeros((np.size(mf_locations),imshape[0], imshape[1]))
+
     # inject the instrument PSFs - this cannot be done on a flattened cube
     # only inject PSFs at the specified positions
     # inject_psf will automatically work across the n_bases axis
@@ -79,27 +80,28 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
         MF = mf_flat_template * mf_flat_pickout
     # otherwise, go on to the KLIP subtraction of the MF
     else:
-    # store the klip-subtracted PSF models here - index across locations and KL modes
-        mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations), 
+        # store the klip-subtracted PSF models here
+        # index across locations and KL modes
+        mf_flat_template_klipped = np.zeros((len(n_bases), len(mf_locations),
                                              imshape[0], imshape[1]))
         mf_flat_template_klipped = utils.flatten_image_axes(mf_flat_template_klipped)
-        
+
         nloc = list(range(len(mf_locations)))
         for i in nloc:
-            psf_template = mf_flat_template[i,region_pix]
+            psf_template = mf_flat_template[i, region_pix]
             # don't be intimidated - fancy python crap to match array dims
             tmp = np.tile(RK.klip_subtract_with_basis(psf_template,
-                                                       kl_basis,
-                                                       n_bases),
+                                                      kl_basis,
+                                                      n_bases),
                           np.ones_like(mf_flat_template.shape))
             mf_flat_template_klipped[:,i,region_pix] = tmp
             mf_flat_template_klipped *= mf_flat_pickout
-            mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:,region_pix],
+            mf_norm_flat = fmmf_throughput_correction(mf_flat_template[:, region_pix],
                                                       kl_basis, n_bases)
-            MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat,-1)
-            MF = roll_axis(MF,0,2) # put the locations axis first
+            MF = mf_flat_template_klipped/np.expand_dims(mf_norm_flat, -1)
+            MF = np.roll_axis(MF, 0, 2) # put the locations axis first
     # remember to subtract the mean
-    MF = MF - np.expand_dims(np.nanmean(MF, axis=-1),-1)
+    MF = MF - np.expand_dims(np.nanmean(MF, axis=-1), -1)
 
     return MF
 
@@ -108,28 +110,30 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 # APPLYING MATCHED FILTERS #
 ############################
 
-def apply_matched_filter(images, matched_filter=None, throughput_corr=False, scale=1):
+def apply_matched_filter(images, matched_filter=None,
+                         throughput_corr=False, scale=1):
     """
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already 
-    been sampled to the same resolution, and that the regions correspond to each other.
+    Apply a matched filter to an image. It is assumed that the image and
+    the matched filter have already been sampled to the same resolution, and
+    that the regions correspond to each other.
     Arguments:
-        image: 1-D flattened image or N-D array of images where the last axis 
-          is the flattened region of interest. The image(s) and the matched 
+        image: 1-D flattened image or N-D array of images where the last axis
+          is the flattened region of interest. The image(s) and the matched
           filter must have the last two axes aligned.
           Tip: use utils.flatten_image_axes(images) to call on 2-D images
         matched_filter: Cube of flattened matched filters, one MF per pixel
           where we want to know the flux.
-        throughput_corr: throughput correction for the matched filter. If None, then
-          defaults to |MF|^2
+        throughput_corr: throughput correction for the matched filter. If None,
+          then defaults to |MF|^2
         scale: any additional scaling you want to apply to the matched filter
     Returns:
-        mf_map: (array of) images where the matched filter has been applied at each pixel
- 
+        mf_map: (array of) images where the matched filter has been applied at
+          each pixel
     """
     orig_shape = np.shape(images)
     if images.ndim == 1:
-        images = np.expand_dims(images,0)
-        
+        images = np.expand_dims(images, 0)
+
     if np.ndim(throughput_corr) == 1:
         throughput_corr = np.expand_dims(throughput_corr, -1)
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
@@ -143,25 +147,30 @@ def apply_matched_filter(images, matched_filter=None, throughput_corr=False, sca
     # undo the funky linear algebra reshaping
     mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
 
-    # if throughput corrections are provided, apply them to the matched filter results
+    # if throughput corrections are provided,
+    # apply them to the matched filter results
     # otherwise, use the matched filter norm
     if isinstance(throughput_corr, bool):
         throughput_corr = np.linalg.norm(matched_filter, axis=-1)**2
     mf_map /= throughput_corr
-    
+
     # multiply the remaining scale factors
     mf_map *= scale
     return np.squeeze(mf_map)
+
 
 def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
                                   throughput_corr=False):
     """
     LEGACY CODE
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled to the same resolution.
+    Apply a matched filter to an image. It is assumed that the image and the
+      matched filter have already been sampled to the same resolution.
     Arguments:
         image: 2-D image
-        matched_filter: Cube of flattened matched filters, one MF per pixel (flattened along the second axis)
-        locations: flattened pixel indices of the pixels to apply the matched filter
+        matched_filter: Cube of flattened matched filters, one MF per pixel
+          (flattened along the second axis)
+        locations: flattened pixel indices of the pixels to apply the matched
+          filter
     Returns:
         mf_map: 2-D image where the matched filter has been applied
         throughput_corr: [False] to apply throughput correction, pass an array of normalization factors that matches the shape of the matched filter
@@ -171,10 +180,10 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     im_shape = image.shape[-2:]
     if image.ndim == 2:
         image = image.ravel()
-        image = np.expand_dims(image,0)
+        image = np.expand_dims(image, 0)
     elif image.ndim >= 3:
         image = utils.flatten_image_axes(image)
-    
+
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     nanpix_img = np.where(np.isnan(image))
     nanpix_mf = np.where(np.isnan(matched_filter))
@@ -185,18 +194,17 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     if locations is None:
         locations = list(range(im_shape[0]*im_shape[1]))
 
-    
     # instantiate the map
     mf_map = np.zeros_like(image)
 
     # apply matrix multiplication
     try:
-        mf_map[...,locations] = np.array([np.diag(np.dot(mf, np.rollaxis(image,-1,-2)))
+        mf_map[..., locations] = np.array([np.diag(np.dot(mf, np.rollaxis(image, -1, -2)))
                                           for mf in matched_filter]).T
     except ValueError:
-        mf_map[...,locations] = np.array([np.dot(mf, np.rollaxis(image,-1,-2))
+        mf_map[...,locations] = np.array([np.dot(mf, np.rollaxis(image, -1, -2))
                                           for mf in matched_filter]).T
-    
+
     # if throughput corrections are provided, apply them to the matched filter results
     if not isinstance(throughput_corr, bool):
         mf_map /= throughput_corr
@@ -206,13 +214,14 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     return mf_map.reshape(orig_shape)
 
 
-    
 def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
-                                   throughput_corr=False, im_shape=None, scale=1):
+                                   throughput_corr=False, im_shape=None,
+                                   scale=1):
     """
     LEGACY CODE
-    Apply a matched filter to an image. It is assumed that the image and the matched filter have already been sampled 
-    to the same resolution, and that the regions correspond to each other.
+    Apply a matched filter to an image. It is assumed that the image and the
+    matched filter have already been sampled to the same resolution, and that
+    the regions correspond to each other.
     Arguments:
         image: 2-D image or 3-D array of images
             the image(s) and the matched filter must have the last two axes aligned

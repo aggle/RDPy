@@ -36,7 +36,7 @@ import NICMOS as NICMOSclass
 NICMOS = NICMOSclass.NICMOS()
 # NICMOS.IWApix = NICMOS.IWApix*2.
 psf_file="/home/jaguilar/Work/BetaPic/LP/BetaPicStuff2/Era1_F160W.fits"
-psf_size = 10 # diameter = 21
+psf_size = 15 # diameter = 31=2*15+1
 NICMOS.load_psf(fits.getdata(psf_file), (45,45), psf_size)
 
 # set up data
@@ -206,14 +206,21 @@ class MyTest(unittest.TestCase):
                          True,
                          "MF location not where you injected it.")
 
+    '''
     def test_mf_throughput_alignment(self):
         """
         Check that the MF throughput you calculate corresponds to the correct pixel
         """
+        mf_locations = np.ravel_multi_index(np.array([[35,40],[45,40]]).T, NICMOS.imshape)
+        mf_template1 = MF.generate_matched_filter(NICMOS.psf, kl_basis=None, imshape=NICMOS.imshape, mf_locations=mf_locations)
+        mf_template2 = np.concatenate([[utils.inject_psf(np.zeros(NICMOS.imshape), psf, center=i)]
+                                       for i in np.unravel_multi_index(mf_locations, NICMOS.imshape)], axis=0)
         MF.fmmf_throughput_correction(full_rc.matched_filter[:, full_rc.flat_region_ind], 
                                               full_rc.kl_basis, 
                                               full_rc.n_basis)
 
+    '''
+        
 
 if __name__=="__main__":
 
