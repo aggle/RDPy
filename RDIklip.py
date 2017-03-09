@@ -16,7 +16,8 @@ import utils
 
 
 
-def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False):
+def generate_kl_basis(references, kl_max=None,
+                      return_evecs=False, return_evals=False):
     """
     Generate the KL basis from a set of reference images. Always returns the full KL basis
     This is pretty straight-up borrowed from pyKLIP (Wang et al. 2015)
@@ -38,7 +39,7 @@ def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False
 
     covar = np.cov(ref_psfs_mean_sub)
 
-    
+    if kl_max is None: kl_max = covar.shape[0]
     # Limit to the valid number of KL modes
     tot_basis = covar.shape[0] # max number of KL modes
     numbasis = np.clip(kl_max-1, 0, tot_basis-1)
@@ -69,7 +70,7 @@ def generate_kl_basis(references, kl_max, return_evecs=False, return_evals=False
         return_objs = return_objs[0]
     return return_objs
     
-def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=False):
+def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None, double_project=False):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
@@ -133,7 +134,7 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     #return np.squeeze(kl_sub)
 
 
-def klip_subtract_with_basis_faster(img_flat, kl_basis, n_bases=None, double_project=False):
+def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=False):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
@@ -143,49 +144,61 @@ def klip_subtract_with_basis_faster(img_flat, kl_basis, n_bases=None, double_pro
           If None, use full basis
       double_project: apply KL twice (useful for some FMMF cases)
     Return:
-      kl_sub: array with same shape as input image, after KL PSF subtraction. The KL basis axis is second-to-last (before image pixels)
+      kl_sub: array with same shape as input image, after KL PSF subtraction.
+        The KL basis axis is second-to-last (before image pixels)
     """
-    """
-    New idea: take arbitrary input shape where the last axes is the pixels, turn it into 
-    whatever x Npix, do KLIP, and then return 
-    """
+
+    # make sure n_bases is iterable
+    if n_bases is None:
+        n_bases = np.array([len(kl_basis)])
+    elif hasattr(n_bases, '__getitem__') is False:
+        n_bases = np.array([n_bases])
+    else:  # explicitly cast to array
+        n_bases = np.array(n_bases)
+    # make sure the upper bound on n_bases is legal
+    # also, this applies the -1 shift needed for proper indexing
+    tot_basis = len(kl_basis)-1
+    n_bases = np.clip(n_bases - 1, 0, tot_basis-1)
+
     # reshape input
-    # math assumes img_flat has 2 dimensions, with the last dimension being the image pixels
+    # math assumes img_flat has 2 dimensions, with the last dimension being
+    # the image pixels
     leading_shape = img_flat.shape[:-1]
     if img_flat.ndim == 1:
         # add an empty axis to the front
         img_flat = np.expand_dims(img_flat, 0)
         flat_shape = img_flat.shape
     elif img_flat.ndim > 2:
-        flat_shape = (reduce(lambda x,y: x*y, img_flat.shape[:-1]), img_flat.shape[-1])
+        flat_shape = (reduce(lambda x, y: x*y, img_flat.shape[:-1]),
+                      img_flat.shape[-1])
     else:
         flat_shape = img_flat.shape
-    orig_shape = np.copy(img_flat.shape)
-    img_flat = img_flat.reshape(flat_shape)    
+    # orig_shape = np.copy(img_flat.shape)
+    img_flat = img_flat.reshape(flat_shape)
 
     kl_basis = np.asarray(kl_basis)
     img_flat_mean_sub = img_flat - np.nanmean(img_flat, axis=-1, keepdims=True)
 
-    # make sure n_bases is iterable
-    if n_bases is None:
-        n_bases = [len(kl_basis)+1]
-    if hasattr(n_bases, '__getitem__') is False:
-        n_bases = [n_bases]
+    # CAREFUL! tiling depends on dimensionality of img_flat_mean_sub
+    imgs_tiled = np.tile(img_flat_mean_sub[..., None, :],
+                         [1 for i in img_flat_mean_sub.shape[:-1]] + [len(kl_basis), 1])
 
-    basis_picker = np.triu(np.ones(kl_basis.shape[0],kl_basis.shape[0]))
-    # project the image onto the PSF basis
-    psf_projection = np.array([np.dot(np.dot(img_flat_mean_sub, kl_basis[:n_bases[i]].T),
-                                      kl_basis[:n_bases[i]])
-                               for i in range(len(n_bases))])
+    coeffs = np.dot(imgs_tiled, kl_basis.T)
+    lower_tri = np.tril(np.ones((kl_basis.shape[0], kl_basis.shape[0])))
+    coeffs = coeffs * lower_tri
+
+    klip_psf = np.dot(coeffs[...,n_bases,:], kl_basis)
+
     # subtract the projection from the image
-    kl_sub = img_flat_mean_sub - psf_projection
-
-
+    kl_sub = imgs_tiled[...,n_bases,:] - klip_psf
 
     # put it back in the original shape
-    # the KL axis ends up in front. We want to put it just before the image axis
-    kl_sub = np.rollaxis(kl_sub, 0, -1)
+    # the KL axis ends up in front. We want it just before the image axis
+    #kl_sub = np.rollaxis(kl_sub, 0, -1)
     new_shape = list(leading_shape) + list(kl_sub.shape[-2:])
+    #print(kl_sub.shape)
+    #print(leading_shape)
+    #print(new_shape)
     return np.squeeze(kl_sub.reshape(new_shape))
-    #kl_sub = np.reshape(kl_sub, new_shape)
+    # kl_sub = np.reshape(kl_sub, new_shape)
     #return np.squeeze(kl_sub)
