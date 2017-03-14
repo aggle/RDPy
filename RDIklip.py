@@ -25,7 +25,7 @@ def generate_kl_basis(references, kl_max=None,
         references: Nimg x Npix flattened array of reference images
         kl_max [None]: number of KL modes to return. Default: all
         return_evecs [False]: if True, return the eigenvectors of the covar matrix
-        return_evals [False]: if true, return the eigenvalues of the eigenvectors
+        return_evals [False]: if true, return the eigenvalues of the eigenvectorsnumbasis = np.clip(numbasis - 1, 0, tot_basis-1)
     Returns:
         kl_basis: Full KL basis (up to kl_max modes if given; default len(references))
         evecs: covariance matrix eigenvectors, if desired
@@ -134,7 +134,7 @@ def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None, double_pro
     #return np.squeeze(kl_sub)
 
 
-def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=False):
+def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
@@ -187,18 +187,11 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None, double_project=Fa
     lower_tri = np.tril(np.ones((kl_basis.shape[0], kl_basis.shape[0])))
     coeffs = coeffs * lower_tri
 
-    klip_psf = np.dot(coeffs[...,n_bases,:], kl_basis)
+    klip_psf = np.dot(coeffs[..., n_bases, :], kl_basis)
 
     # subtract the projection from the image
-    kl_sub = imgs_tiled[...,n_bases,:] - klip_psf
-
+    kl_sub = imgs_tiled[..., n_bases, :] - klip_psf
     # put it back in the original shape
     # the KL axis ends up in front. We want it just before the image axis
-    #kl_sub = np.rollaxis(kl_sub, 0, -1)
     new_shape = list(leading_shape) + list(kl_sub.shape[-2:])
-    #print(kl_sub.shape)
-    #print(leading_shape)
-    #print(new_shape)
     return np.squeeze(kl_sub.reshape(new_shape))
-    # kl_sub = np.reshape(kl_sub, new_shape)
-    #return np.squeeze(kl_sub)

@@ -546,11 +546,9 @@ def sort_squared_distance(targ, references):
     return sorted_image_indices
 
 
-
-
 ###################################
-### FUNCTIONS DEFINED ELSEWHERE ###
-###            LEGACY           ###
+#   FUNCTIONS DEFINED ELSEWHERE   #
+#              LEGACY             #
 ###################################
 
 make_image_from_region = utils.make_image_from_region
