@@ -10,8 +10,8 @@ import RDIklip as RK
 # GENERATING MATCHED FILTERS #
 ##############################
 def generate_matched_filter(psf, kl_basis=None, n_bases=None,
-                                  imshape=None, region_pix=None,
-                                  mf_locations=None):
+                            imshape=None, region_pix=None,
+                            mf_locations=None):
     """
     generate a matched filter with a model of the PSF. For now we assume that
     the KL basis covers the entire image.
@@ -72,7 +72,7 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
     mf_flat_template = utils.flatten_image_axes(mf_template_cube)
     mf_flat_pickout =  utils.flatten_image_axes(mf_pickout_cube)
 
-    # remember to subtract the mean
+    # remember to subtract the mean of the PSF
     MF = mf_flat_template - np.expand_dims(np.nanmean(mf_flat_template, axis=-1), -1)#  * mf_flat_pickout
     # if no KL basis is supplied, return the *UNMODIFIED* psf
     # otherwise, go on to the KLIP subtraction of the MF
