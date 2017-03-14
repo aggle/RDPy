@@ -379,13 +379,19 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     returns:
         [(n_basis x) Nloc] throughput correction, per KLmax per location
     """
+    # prepare a mask that ensures only the relevant parts of the PSF are included
+    mask = np.zeros_like(psfs)
+    mask[np.where(psfs != 0)] = 1
     # do KLIP on the PSFs, then take the normalization
     # one throughput for each psf. Final shape: Nloc x N_klmax
     if kl_basis is None:
         psfs_modded = psfs
     else:
         psfs_modded = RK.klip_subtract_with_basis(psfs, kl_basis, n_bases)
-    normed_psfs = np.linalg.norm(psfs_modded, axis=-1)**2
+        # expand mask along the KL axis
+        mask = np.tile(np.expand_dims(mask, 1), (1, len(n_bases), 1))
+    # before you take the norm, make sure you set regions outside the PSF to 0
+    normed_psfs = np.linalg.norm(psfs_modded * mask, axis=-1)**2
     return np.squeeze(normed_psfs.T) # put the KL axis first, location aka pixel axis last
 
 def fmmf_throughput_correction_old(psfs, kl_basis=None, n_bases=None):
