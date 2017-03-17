@@ -370,8 +370,9 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
 ##############
 def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     """
-    Calculate the normalization aka throughput correction factor for the matched filter, to get flux out
-    New hotness: the PSF should only include the region of the MF!! not the 
+    Calculate the normalization aka throughput correction factor for the
+    matched filter, to get flux out
+    New hotness: the PSF should only include the region of the MF!! not the
     Arguments:
         psfs: the flattened model psfs (Nloc, Region_pix)
         kl_basis: the KL basis for projection (KLmax, Region_pix)
@@ -392,7 +393,7 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
         mask = np.tile(np.expand_dims(mask, 1), (1, len(n_bases), 1))
     # before you take the norm, make sure you set regions outside the PSF to 0
     normed_psfs = np.linalg.norm(psfs_modded * mask, axis=-1)**2
-    return np.squeeze(normed_psfs.T) # put the KL axis first, location aka pixel axis last
+    return np.squeeze(normed_psfs.T)  # put the KL axis first, location aka pixel axis last
 
 def fmmf_throughput_correction_old(psfs, kl_basis=None, n_bases=None):
     """

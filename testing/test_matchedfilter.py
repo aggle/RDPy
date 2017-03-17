@@ -2,16 +2,18 @@ import sys
 import os
 import glob
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from matplotlib.colors import LogNorm
-from matplotlib import colors
 from astropy.io import fits
 import pandas as pd
 from importlib import reload
 from functools import reduce
 from collections import OrderedDict
 from IPython.display import clear_output
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+from matplotlib import colors
+
 
 from scipy import signal
 
@@ -30,14 +32,16 @@ import utils
 import MatchedFilter as MF
 import NICMOS as NICMOSclass
 
+sys.path.append("/home/jaguilar/Work/BetaPic/results_fits/")
+import data_lib as dlib
 
-
+"""
 # NICMOS instrument
 NICMOS = NICMOSclass.NICMOS()
 # NICMOS.IWApix = NICMOS.IWApix*2.
-psf_file="/home/jaguilar/Work/BetaPic/LP/BetaPicStuff2/Era1_F160W.fits"
-psf_size = 15 # diameter = 31=2*15+1
-NICMOS.load_psf(fits.getdata(psf_file), (45,45), psf_size)
+psf_file = "/home/jaguilar/Work/BetaPic/LP/BetaPicStuff2/Era1_F160W.fits"
+psf_size = 15  # diameter = 31=2*15+1
+NICMOS.load_psf(fits.getdata(psf_file), (45, 45), psf_size)
 
 # set up data
 hdulist = fits.open("/home/jaguilar/Work/BetaPic/LP/BetaPicStuff2/referenceCube_1412081740.fits")
@@ -62,24 +66,26 @@ reference_cube = cube[goodref_metadata['index']]
 # normalization factor
 hr_flux_scale = 1/(NICMOS.frac_flux * hr_metadata['ALIGNNU'])
 bp_flux_scale = 1/(NICMOS.frac_flux * bp_metadata['ALIGNNU'])
-
+"""
 
 # Test images
-test_fluxes = np.array([50,75,100], dtype=np.float) # these are the correct answers
-test_pos = np.array([45,37])
-test_cube = utils.inject_psf(np.zeros(NICMOS.imshape), NICMOS.psf, test_pos, scale_flux = test_fluxes)
+test_fluxes = np.array([50, 75, 100], dtype=np.float)  # these are the correct answers
+test_pos = np.array([45, 37])
+test_cube = utils.inject_psf(np.zeros(dlib.NICMOS.imshape), dlib.NICMOS.psf,
+                             test_pos, scale_flux=test_fluxes)
 
 # Reference Cube
-full_rc = RDI.ReferenceCube(reference_cube, instrument=NICMOS)
+full_rc = RDI.ReferenceCube(dlib.references, instrument=dlib.NICMOS)
 # kl basis
-full_rc.n_basis = np.arange(20,len(reference_cube), 10)
-full_rc.generate_kl_basis()
+full_rc.n_basis = np.arange(20, len(dlib.references), 10)
+# full_rc.generate_kl_basis()
+full_rc.kl_basis = fits.getdata("../../results_fits/full_kl_basis.fits", 0)
 # matched filter
 # kl-basis matched filter
 full_rc.generate_matched_filter(mf_locations=[test_pos], mean_subtract=True)
-#full_rc.matched_filter * NICMOS.frac_flux
-mf_throughput = MF.fmmf_throughput_correction(full_rc.matched_filter[:, full_rc.flat_region_ind], 
-                                              full_rc.kl_basis, 
+# full_rc.matched_filter * NICMOS.frac_flux
+mf_throughput = MF.fmmf_throughput_correction(full_rc.matched_filter[:, full_rc.flat_region_ind],
+                                              full_rc.kl_basis,
                                               full_rc.n_basis)
 # ones only - give back sum of image
 ones_matched_filter = np.ones((1, full_rc.npix_region))
@@ -97,11 +103,13 @@ class MyTest(unittest.TestCase):
         self.assertEqual(np.all(np.abs(mf_result/test_fluxes-1) < 1e-3), True,
                          "ones_filter does not give back right answer")
 
-    
+    def test_apply_ones_filter_correlate(self):
+        """Test that signal.correlate2D with the Matched Filter """
+
     def test_apply_injetion_random_bgnd(self):
         """Apply MF to an injection on a random background"""
         np.random.seed(1234)
-        test_input = test_cube + np.random.normal(0,1,test_cube.shape[1:])
+        test_input = test_cube + np.random.normal(0, 1, test_cube.shape[1:])
         mf_result = MF.apply_matched_filter(full_rc.matched_filter,
                                             utils.flatten_image_axes(test_input),
                                             throughput_corr=np.linalg.norm(full_rc.matched_filter)**2,
@@ -113,7 +121,7 @@ class MyTest(unittest.TestCase):
                          True,
                          "MF fails on random noise background")
 
-    
+
     def test_apply_kl_filter_check_magnitude(self):
         """Apply MF to the KL-subtracted 0+PSF image and see if you get the injected fluxes back"""
         test_input = test_cube
@@ -206,6 +214,8 @@ class MyTest(unittest.TestCase):
                          True,
                          "MF location not where you injected it.")
 
+    def test_mf_throughput_methods(self)
+
     '''
     def test_mf_throughput_alignment(self):
         """
@@ -220,7 +230,7 @@ class MyTest(unittest.TestCase):
                                               full_rc.n_basis)
 
     '''
-        
+
 
 if __name__=="__main__":
 

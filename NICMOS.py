@@ -47,7 +47,7 @@ class NICMOS(Instrument):
                               '<F_NU(VEGA)>':1083.9,
                               'APCOR':1.1877}
         return phot_dict[filt_name.upper()]
-                                      
+
 
     # Image stuff
     @property
@@ -88,15 +88,15 @@ class NICMOS(Instrument):
     @IWAmask.setter
     def IWAmask(self, newval):
         self._IWAmask = newval
-    # mask generator    
+    # mask generator
     def make_IWA_mask(self, shape, center, iwa):
         rad = np.linalg.norm(np.indices(shape) - center[:,None,None], axis=0)
         outside = np.where(rad >= iwa/2.)
         mask = np.zeros(shape)
         mask[outside] = 1
         return mask
-        
-        
+
+
     # PSF STUFF
     @property
     def psf(self):
@@ -109,7 +109,7 @@ class NICMOS(Instrument):
     def psf(self, new_psf):
         # normalized PSF
         self._psf = new_psf/np.nansum(new_psf)
-    
+
     @property
     def frac_flux(self):
         """
