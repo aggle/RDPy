@@ -72,8 +72,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
     mf_flat_template = utils.flatten_image_axes(mf_template_cube)
     mf_flat_pickout =  utils.flatten_image_axes(mf_pickout_cube)
 
-    # remember to subtract the mean of the PSF
-    MF = mf_flat_template - np.expand_dims(np.nanmean(mf_flat_template, axis=-1), -1)#  * mf_flat_pickout
+    MF = mf_flat_template
+
     # if no KL basis is supplied, return the *UNMODIFIED* psf
     # otherwise, go on to the KLIP subtraction of the MF
     if kl_basis is not None:
@@ -100,6 +100,8 @@ def generate_matched_filter(psf, kl_basis=None, n_bases=None,
 
     # we only want the places where the template was injected to contribute
     MF *= mf_flat_pickout
+    # remember to subtract the mean of the PSF
+    MF = MF - np.expand_dims(np.nanmean(MF, axis=-1), -1)#  * mf_flat_pickout
 
     return MF
 
@@ -252,6 +254,11 @@ def apply_matched_filter(images, matched_filter=None,
     mf_map *= scale
     return np.squeeze(mf_map)
 
+def correlate_MF_template(image, matched_filter=None, locations=None):
+    """
+    tmp
+    """
+    pass
 
 def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
                                   throughput_corr=False):
@@ -380,9 +387,6 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     returns:
         [(n_basis x) Nloc] throughput correction, per KLmax per location
     """
-    # prepare a mask that ensures only the relevant parts of the PSF are included
-    mask = np.zeros_like(psfs)
-    mask[np.where(psfs != 0)] = 1
     # do KLIP on the PSFs, then take the normalization
     # one throughput for each psf. Final shape: Nloc x N_klmax
     if kl_basis is None:
@@ -390,9 +394,15 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     else:
         psfs_modded = RK.klip_subtract_with_basis(psfs, kl_basis, n_bases)
         # expand mask along the KL axis
-        mask = np.tile(np.expand_dims(mask, 1), (1, len(n_bases), 1))
+        # mask = np.tile(np.expand_dims(mask, 1), (1, len(n_bases), 1))
     # before you take the norm, make sure you set regions outside the PSF to 0
+
+    # prepare a mask that ensures only the relevant parts of the PSF are included
+    mask = np.zeros_like(psfs)
+    mask[np.where(psfs != 0)] = 1
+    # mask = np.ones_like(psfs)
     normed_psfs = np.linalg.norm(psfs_modded * mask, axis=-1)**2
+    # normed_psfs = np.linalg.norm(psfs_modded, axis=-1)**2
     return np.squeeze(normed_psfs.T)  # put the KL axis first, location aka pixel axis last
 
 def fmmf_throughput_correction_old(psfs, kl_basis=None, n_bases=None):
