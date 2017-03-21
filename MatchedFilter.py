@@ -5,6 +5,7 @@ Matched Filter stuff
 import numpy as np
 import utils
 import RDIklip as RK
+from scipy import signal
 
 ##############################
 # GENERATING MATCHED FILTERS #
@@ -254,11 +255,32 @@ def apply_matched_filter(images, matched_filter=None,
     mf_map *= scale
     return np.squeeze(mf_map)
 
-def correlate_MF_template(image, matched_filter=None, locations=None):
+
+def correlate_mf_template(image, filter_template, filter_norm=None):
     """
-    tmp
+    Use scipy.signal.correlate to apply the matched filter to the data
+    Arguments:
+      image: [Ni x [Nj x [... x [Nx x Ny]]]] image to correlate with the MF
+        the last 2 axes are the image axes (usually NICMOS.imshape)
+      filter_template: 2D stamp of the PSF
+      filter_norm: [None] normalization applied to the filter result (division)
+        shape must be compatible with dividing the image.
+        Default is no normalization (i.e. division by 1)
+    Returns:
+      matched_filter: the result of applying the filter template. Same
+        dimensions as input image
     """
-    pass
+    # number of dimensions must match
+    for dim in range(np.ndim(image) - np.ndim(filter_template)):
+        filter_template = np.expand_dims(filter_template, 0)
+    # apply the filter template
+    mf_result = signal.correlate(image, filter_template, mode='same')
+    if filter_norm is None:
+        filter_norm = 1
+    # you have the option of applying normalization here
+    mf_result /= filter_norm
+    return mf_result
+
 
 def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
                                   throughput_corr=False):
@@ -274,7 +296,8 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
           filter
     Returns:
         mf_map: 2-D image where the matched filter has been applied
-        throughput_corr: [False] to apply throughput correction, pass an array of normalization factors that matches the shape of the matched filter
+        throughput_corr: [False] to apply throughput correction, pass an array
+          of normalization factors that matches the shape of the matched filter
     """
     # get the image into the right shape
     orig_shape = np.copy(image.shape)
@@ -301,10 +324,10 @@ def apply_matched_filter_to_image(image, matched_filter=None, locations=None,
     # apply matrix multiplication
     try:
         mf_map[..., locations] = np.array([np.diag(np.dot(mf, np.rollaxis(image, -1, -2)))
-                                          for mf in matched_filter]).T
+                                           for mf in matched_filter]).T
     except ValueError:
-        mf_map[...,locations] = np.array([np.dot(mf, np.rollaxis(image, -1, -2))
-                                          for mf in matched_filter]).T
+        mf_map[..., locations] = np.array([np.dot(mf, np.rollaxis(image, -1, -2))
+                                           for mf in matched_filter]).T
 
     # if throughput corrections are provided, apply them to the matched filter results
     if not isinstance(throughput_corr, bool):
@@ -334,17 +357,16 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
 
     Returns:
         mf_map: 2-D image where the matched filter has been applied at each pixel
- 
     """
     # get the image into the right shape
     orig_shape = np.copy(image.shape)
     im_shape = image.shape[-2:]
     if image.ndim == 2:
         image = image.ravel()
-        image = np.expand_dims(image,0)
+        image = np.expand_dims(image, 0)
     elif image.ndim >= 3:
         image = utils.flatten_image_axes(image)
-    
+
     # numpy cannot handle nan's so set all nan's to 0! the effect is the same
     nanpix_img = np.where(np.isnan(image))
     nanpix_mf = np.where(np.isnan(matched_filter))
@@ -359,18 +381,19 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
     mf_map = np.dot(matched_filter, np.rollaxis(image, -1, -2)).T
     # undo the funky linear algebra reshaping
     mf_map = np.rollaxis(mf_map.T, 0, mf_map.ndim)
-    # if throughput corrections are provided, apply them to the matched filter results
+    # if throughput corrections are provided, apply them to the MF results
     if not isinstance(throughput_corr, bool):
         mf_map /= throughput_corr
     # multiply the remaining scale factors
     mf_map *= scale
     # put the nans back
     matched_filter[nanpix_mf] = np.nan
-    #mf_map[nanpix_img] = np.nan
+    # mf_map[nanpix_img] = np.nan
 
     # restore shape: should be all leading axes + mf locations
     final_shape = list(orig_shape[:-2])+[np.size((locations))]
     return mf_map.reshape(final_shape)
+
 
 ##############
 # THROUGHPUT #
@@ -397,7 +420,7 @@ def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
         # mask = np.tile(np.expand_dims(mask, 1), (1, len(n_bases), 1))
     # before you take the norm, make sure you set regions outside the PSF to 0
 
-    # prepare a mask that ensures only the relevant parts of the PSF are included
+    # prepare a mask that ensures only the relevant parts of the PSF are used
     mask = np.zeros_like(psfs)
     mask[np.where(psfs != 0)] = 1
     # mask = np.ones_like(psfs)
