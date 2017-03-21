@@ -386,8 +386,7 @@ class ReferenceCube(object):
         argdict['double_project']= kwargs.get('double_project', False)
         vals = klip_subtract_with_basis(argdict['img_flat'],
                                         argdict['kl_basis'],
-                                        argdict['n_bases'],
-                                        argdict['double_project'])
+                                        argdict['n_bases'])
         return vals
     
     def generate_kl_basis(self, return_vals=False, **kwargs):
