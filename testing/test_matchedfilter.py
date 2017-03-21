@@ -30,9 +30,9 @@ import RDI
 import RDIklip as RK
 import utils
 import MatchedFilter as MF
-import NICMOS as NICMOSclass
 
-sys.path.append("/home/jaguilar/Work/BetaPic/results_fits/")
+results_dir = "/home/jaguilar/Work/BetaPic/results_fits/"
+sys.path.append(results_dir)
 import data_lib as dlib
 
 """
@@ -79,7 +79,7 @@ full_rc = RDI.ReferenceCube(dlib.references, instrument=dlib.NICMOS)
 # kl basis
 full_rc.n_basis = np.arange(20, len(dlib.references), 10)
 # full_rc.generate_kl_basis()
-full_rc.kl_basis = fits.getdata("../../results_fits/full_kl_basis.fits", 0)
+full_rc.kl_basis = utils.flatten_image_axes(fits.getdata("../../results_fits/full_kl_basis.fits", 0))
 # matched filter
 # kl-basis matched filter
 full_rc.generate_matched_filter(mf_locations=[test_pos], mean_subtract=True)
@@ -105,6 +105,7 @@ class MyTest(unittest.TestCase):
 
     def test_apply_ones_filter_correlate(self):
         """Test that signal.correlate2D with the Matched Filter """
+        pass
 
     def test_apply_injetion_random_bgnd(self):
         """Apply MF to an injection on a random background"""
@@ -120,7 +121,6 @@ class MyTest(unittest.TestCase):
         self.assertEqual(np.all(np.abs(mf_result/test_against-1) < 0.05),
                          True,
                          "MF fails on random noise background")
-
 
     def test_apply_kl_filter_check_magnitude(self):
         """Apply MF to the KL-subtracted 0+PSF image and see if you get the injected fluxes back"""
@@ -139,6 +139,29 @@ class MyTest(unittest.TestCase):
                          True,
                          "MF with KL sub values wrong")
 
+    def test_klmf_scipy_check_magnitude(self):
+        test_input = test_cube.copy()
+        klsub = RDI.klip_subtract_with_basis(img_flat=utils.flatten_image_axes(test_input),
+                                             kl_basis=full_rc.kl_basis,
+                                             n_bases=full_rc.n_basis)
+        #mf_template = dlib.NICMOS.psf - dlib.NICMOS.psf.sum()/dlib.NICMOS.npix
+        mf_template = dlib.mf_template
+        mf_results = MF.correlate_mf_template(utils.make_image_from_region(klsub),
+                                              mf_template,
+                                              filter_norm=1)
+        # mf_results = np.array([[[signal.correlate2d(utils.make_image_from_region(kl_img),
+        #                                             mf_template, mode='same')]
+        #                         for kl_img in img] for img in klsub])
+        # mf_results = np.squeeze(mf_results)
+        # print(mf_results)
+        mf_results = mf_results[..., test_pos[0], test_pos[1]]/mf_throughput
+        test_against = test_fluxes.copy()
+        for i in range(mf_results.ndim - test_fluxes.ndim):
+            test_against = np.expand_dims(test_against, -1)
+        self.assertEqual(np.all(np.abs(mf_results/test_against-1) < 0.01),
+                         True,
+                         "MF with KL sub values wrong")
+
     def test_apply_kl_filter_check_slope(self):
         """Check that the flux goes monotonically down"""
         klsub = RDI.klip_subtract_with_basis(img_flat=utils.flatten_image_axes(test_cube),
@@ -146,31 +169,33 @@ class MyTest(unittest.TestCase):
                                              n_bases=full_rc.n_basis)
         mf_result = MF.apply_matched_filter(klsub,
                                             full_rc.matched_filter,
-                                            throughput_corr = mf_throughput,
+                                            throughput_corr=mf_throughput,
                                             scale=1)
-        ratios = mf_result/np.expand_dims(test_fluxes,-1)
+        ratios = mf_result/np.expand_dims(test_fluxes, -1)
         #print(ratios.shape)
         self.assertEqual(np.all(np.diff(ratios[int(len(ratios)/2):]) > 0), False,
                          "MF slope never flattens out")
 
     def test_injection_location_even_psf(self):
         """Check that the max pixel of an injected psf is where you told it to be"""
-        psf = NICMOS.load_psf(fits.getdata(psf_file), (45,45), 20, return_psf=True)
+        # psf = dlib.NICMOS.load_psf(fits.getdata(psf_file), (45,45), 20, return_psf=True)
+        psf = dlib.NICMOS.psf
         inj_loc = np.vstack((np.arange(80), np.arange(80))).T
-        injected_img = np.concatenate([[utils.inject_psf(np.zeros(NICMOS.imshape), psf, center=i)]
+        injected_img = np.concatenate([[utils.inject_psf(np.zeros(dlib.NICMOS.imshape), psf, center=i)]
                                        for i in inj_loc], axis=0)
-        self.assertEqual(np.all(inj_loc == np.vstack([np.unravel_index(np.argmax(img), NICMOS.imshape)
+        self.assertEqual(np.all(inj_loc == np.vstack([np.unravel_index(np.argmax(img), dlib.NICMOS.imshape)
                                                       for img in injected_img])
                                 ),
                          True,
                          "Even PSF not injected where you want it to be injected.")
     def test_injection_location_odd_psf(self):
         """Check that the max pixel of an injected psf is where you told it to be"""
-        psf = NICMOS.load_psf(fits.getdata(psf_file), (45,45), 21, return_psf=True)
+        # psf = dlib.NICMOS.load_psf(fits.getdata(psf_file), (45,45), 21, return_psf=True)
+        psf = dlib.NICMOS.psf
         inj_loc = np.vstack((np.arange(80), np.arange(80))).T
-        injected_img = np.concatenate([[utils.inject_psf(np.zeros(NICMOS.imshape), psf, center=i)]
+        injected_img = np.concatenate([[utils.inject_psf(np.zeros(dlib.NICMOS.imshape), psf, center=i)]
                                        for i in inj_loc], axis=0)
-        self.assertEqual(np.all(inj_loc == np.vstack([np.unravel_index(np.argmax(img), NICMOS.imshape)
+        self.assertEqual(np.all(inj_loc == np.vstack([np.unravel_index(np.argmax(img), dlib.NICMOS.imshape)
                                                       for img in injected_img])
                                 ),
                          True,
@@ -181,12 +206,13 @@ class MyTest(unittest.TestCase):
         Check that a MF gives you the same location of the maximum as the place 
         you injected the psf
         """
-        psf = NICMOS.load_psf(fits.getdata(psf_file), (45,45), 21, return_psf=True)
+        # psf = dlib.NICMOS.load_psf(fits.getdata(psf_file), (45,45), 21, return_psf=True)
+        psf = dlib.NICMOS.psf
         inj_loc = np.vstack((np.arange(80), np.arange(80))).T
-        injected_img = np.concatenate([[utils.inject_psf(np.zeros(NICMOS.imshape), psf, center=i)]
+        injected_img = np.concatenate([[utils.inject_psf(np.zeros(dlib.NICMOS.imshape), psf, center=i)]
                                        for i in inj_loc], axis=0)
         mfs = np.concatenate([[signal.correlate2d(img, psf, mode='same')] for img in injected_img])
-        self.assertEqual(np.all(inj_loc == np.vstack([np.unravel_index(np.argmax(img), NICMOS.imshape)
+        self.assertEqual(np.all(inj_loc == np.vstack([np.unravel_index(np.argmax(img), dlib.NICMOS.imshape)
                                                       for img in mfs])
                                 ),
                          True,
@@ -197,16 +223,17 @@ class MyTest(unittest.TestCase):
         Check that a MF gives you the same location of the maximum as the place 
         you injected the psf
         """
-        psf = NICMOS.load_psf(fits.getdata(psf_file), (45,45), 10, return_psf=True)
+        # psf = dlib.NICMOS.load_psf(fits.getdata(psf_file), (45,45), 10, return_psf=True)
+        psf = dlib.NICMOS.psf
         inj_loc = np.vstack((np.arange(80), np.arange(80))).T
-        injected_img = np.concatenate([[utils.inject_psf(np.zeros(NICMOS.imshape), psf, center=i)]
+        injected_img = np.concatenate([[utils.inject_psf(np.zeros(dlib.NICMOS.imshape), psf, center=i)]
                                        for i in inj_loc], axis=0)
-        mf_template = MF.generate_matched_filter(psf, imshape=NICMOS.imshape, mf_locations=inj_loc)
+        mf_template = MF.generate_matched_filter(psf, imshape=dlib.NICMOS.imshape, mf_locations=inj_loc)
         mf_result =  MF.apply_matched_filter(utils.flatten_image_axes(injected_img),
                                              mf_template,
                                              throughput_corr=False,
                                              scale=1)
-        mf_img = np.zeros(NICMOS.imshape)
+        mf_img = np.zeros(dlib.NICMOS.imshape)
         for i,loc in enumerate(inj_loc):
             mf_img[loc[0],loc[1]] = mf_result[i,i]
         # if i put the MF in the right location, the MF result should be 1
@@ -214,17 +241,18 @@ class MyTest(unittest.TestCase):
                          True,
                          "MF location not where you injected it.")
 
-    def test_mf_throughput_methods(self)
+    def test_mf_throughput_methods(self):
+        pass
 
     '''
     def test_mf_throughput_alignment(self):
         """
         Check that the MF throughput you calculate corresponds to the correct pixel
         """
-        mf_locations = np.ravel_multi_index(np.array([[35,40],[45,40]]).T, NICMOS.imshape)
-        mf_template1 = MF.generate_matched_filter(NICMOS.psf, kl_basis=None, imshape=NICMOS.imshape, mf_locations=mf_locations)
-        mf_template2 = np.concatenate([[utils.inject_psf(np.zeros(NICMOS.imshape), psf, center=i)]
-                                       for i in np.unravel_multi_index(mf_locations, NICMOS.imshape)], axis=0)
+        mf_locations = np.ravel_multi_index(np.array([[35,40],[45,40]]).T, dlib.NICMOS.imshape)
+        mf_template1 = MF.generate_matched_filter(dlib.NICMOS.psf, kl_basis=None, imshape=dlib.NICMOS.imshape, mf_locations=mf_locations)
+        mf_template2 = np.concatenate([[utils.inject_psf(np.zeros(dlib.NICMOS.imshape), psf, center=i)]
+                                       for i in np.unravel_multi_index(mf_locations, dlib.NICMOS.imshape)], axis=0)
         MF.fmmf_throughput_correction(full_rc.matched_filter[:, full_rc.flat_region_ind], 
                                               full_rc.kl_basis, 
                                               full_rc.n_basis)
