@@ -222,7 +222,8 @@ def apply_matched_filter(images, matched_filter=None,
           where we want to know the flux.
         throughput_corr: throughput correction for the matched filter. If None,
           then defaults to |MF|^2
-        scale: any additional scaling you want to apply to the matched filter
+        scale: any additional scaling you want to apply to the matched filter,
+          e.g. to compensate for the fractional flux
     Returns:
         mf_map: (array of) images where the matched filter has been applied at
           each pixel
@@ -256,7 +257,8 @@ def apply_matched_filter(images, matched_filter=None,
     return np.squeeze(mf_map)
 
 
-def correlate_mf_template(image, filter_template, filter_norm=None):
+def correlate_mf_template(image, filter_template,
+                          filter_norm=None, scale=None):
     """
     Use scipy.signal.correlate to apply the matched filter to the data
     Arguments:
@@ -264,8 +266,13 @@ def correlate_mf_template(image, filter_template, filter_norm=None):
         the last 2 axes are the image axes (usually NICMOS.imshape)
       filter_template: 2D stamp of the PSF
       filter_norm: [None] normalization applied to the filter result (division)
-        shape must be compatible with dividing the image.
+        i.e. throughput correction.
+        Shape must be compatible with dividing the image.
         Default is no normalization (i.e. division by 1)
+      scale: [None] factor by which to multiply the matched filter result
+        i.e. fraction of the PSF contained by the matched filter
+        multiplies the matched filter result
+        Shape must be compatible with multiplying the image
     Returns:
       matched_filter: the result of applying the filter template. Same
         dimensions as input image
@@ -276,9 +283,12 @@ def correlate_mf_template(image, filter_template, filter_norm=None):
     # apply the filter template
     mf_result = signal.correlate(image, filter_template, mode='same')
     if filter_norm is None:
-        filter_norm = 1
+        filter_norm = 1.
+    if scale is None:
+        scale = 1.
     # you have the option of applying normalization here
     mf_result /= filter_norm
+    mf_result *= scale
     return mf_result
 
 

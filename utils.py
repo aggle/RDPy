@@ -1,3 +1,4 @@
+
 """
 Assorted helper functions for RDI stuff with ALICE data
 """
@@ -52,13 +53,13 @@ def get_stamp_coordinates(center, drow, dcol, imshape):
     # boundaries
     row_lb,col_lb = (0, 0)
     row_hb,col_hb = imshape
-    
+
     rowcheck_lo, colcheck_lo = (center - rads)
     rowcheck_hi, colcheck_hi = ((imshape-center) - rads) - oddflag[::-1]
-    
+
     row_start, col_start = 0,0
     row_end, col_end = stamp.shape
-    
+
     if rowcheck_lo < 0:
         row_start = -1*rowcheck_lo
     if colcheck_lo < 0:
@@ -69,7 +70,7 @@ def get_stamp_coordinates(center, drow, dcol, imshape):
         col_end = colcheck_hi
 
     # pull out the selections
-    img_coords = full_stamp_coord[:,row_start:row_end,col_start:col_end]    
+    img_coords = full_stamp_coord[:,row_start:row_end,col_start:col_end]
     stamp_coords = np.indices(stamp.shape)[:,row_start:row_end,col_start:col_end]
     return (img_coords, stamp_coords)
 
@@ -214,7 +215,7 @@ def make_image_from_region(region, indices=None, shape=None):
         Nside = np.int(np.sqrt(Npix))
         indices = np.array(range(Npix))
         shape = (Nside, Nside)
-        
+
     img = np.ravel(np.zeros(shape))*np.nan
     # handle the case of region being a 2D array by extending the img axes
     if region.ndim > 1:
@@ -227,7 +228,7 @@ def make_image_from_region(region, indices=None, shape=None):
     img[:,indices] = region
     # reshape and get rid of extra axes, if any
     img = np.squeeze(img.reshape(list(oldshape[:-1])+list(shape)))
-                            
+
     return img
 
 
