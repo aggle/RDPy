@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from functools import reduce
 
+from scipy import ndimage
+
 from astropy.io import fits
 from astropy import units
 
@@ -32,6 +34,18 @@ class NICMOS(Instrument):
         self.IWApix = self.IWA/self.pix_scale
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
 
+    # image orientation
+    def orient_nup_eleft(self, img, header):
+        """
+        Given a NICMOS image and header, rotate it so you have Nup and Eleft
+        Arguments:
+          img: 2-D image
+          header: dict-style header with the following keywords:
+            ORIENTAT
+        """
+        rotangle = -header['ORIENTAT']
+        rotimg = ndimage.rotate(img, rotangle)
+        return rotimg
 
     # photometric conversions
     def photometric_conversion(self, filt_name):
