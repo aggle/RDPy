@@ -375,7 +375,7 @@ class ReferenceCube(object):
         reference cube properties as arguments
         Useage:
         {0}
-        """.format(klip_subtract_with_basis.__doc__)
+        """.format(RK.klip_subtract_with_basis.__doc__)
         argdict={}
         argdict['img_flat'] =  kwargs.get('img_flat', getattr(self,'target_region'))
         argdict['kl_basis'] =  kwargs.get('kl_basis', getattr(self,'kl_basis'))
@@ -383,11 +383,9 @@ class ReferenceCube(object):
             argdict['n_bases'] =  kwargs.get('n_bases', getattr(self,'n_basis'))
         except AttributeError:
             argdict['n_bases'] = len(getattr(self,'kl_basis'))
-        argdict['double_project']= kwargs.get('double_project', False)
         vals = klip_subtract_with_basis(argdict['img_flat'],
                                         argdict['kl_basis'],
-                                        argdict['n_bases'],
-                                        argdict['double_project'])
+                                        argdict['n_bases'])
         return vals
     
     def generate_kl_basis(self, return_vals=False, **kwargs):
@@ -396,34 +394,34 @@ class ReferenceCube(object):
         reference cube properties as arguments
         Useage:
         {0}
-        """.format(generate_kl_basis.__doc__)
-        argdict={}
-        argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
-        argdict['kl_max'] = kwargs.get('kl_max', np.max(self.n_basis))#len(argdict['references']))
+        """.format(RK.generate_kl_basis.__doc__)
+        argdict = {}
+        argdict['references'] = kwargs.get('references', getattr(self, 'flat_cube_region'))
+        argdict['kl_max'] = kwargs.get('kl_max', np.max(self.n_basis))  #len(argdict['references']))
         argdict['return_evecs'] = kwargs.get('return_evecs', False)
         argdict['return_evals'] = kwargs.get('return_evals', False)
-        vals = generate_kl_basis(references = argdict['references'],
-                                 kl_max = argdict['kl_max'],
-                                 return_evecs = argdict['return_evecs'],
-                                 return_evals = argdict['return_evals'])
+        vals = generate_kl_basis(references=argdict['references'],
+                                 kl_max=argdict['kl_max'],
+                                 return_evecs=argdict['return_evecs'],
+                                 return_evals=argdict['return_evals'])
         if return_vals is True:
             return vals
         else:
             self.kl_basis = vals
-                    
-        
+
+
     def remove_ref_from_kl_basis(self, ref_index, **kwargs):
         """
         This is a wrapper for RDI.remove_ref_from_kl_basis that defaults to the
         reference cube properties as arguments
         Useage:
         {0}
-        """.format(remove_ref_from_kl_basis.__doc__)
-        argdict={}
-        argdict['references'] = kwargs.get('references', getattr(self,'flat_cube_region'))
-        argdict['kl_basis'] = kwargs.get('kl_basis', getattr(self,'full_kl_basis'))
-        argdict['evecs'] = kwargs.get('evecs', getattr(self,'evecs'))
-        argdict['evals'] = kwargs.get('evals', getattr(self,'evals'))
+        """.format(RK.remove_ref_from_kl_basis.__doc__)
+        argdict = {}
+        argdict['references'] = kwargs.get('references', getattr(self, 'flat_cube_region'))
+        argdict['kl_basis'] = kwargs.get('kl_basis', getattr(self, 'full_kl_basis'))
+        argdict['evecs'] = kwargs.get('evecs', getattr(self, 'evecs'))
+        argdict['evals'] = kwargs.get('evals', getattr(self, 'evals'))
 
         new_basis = remove_ref_from_kl_basis(ref_index, **argdict)
 
@@ -432,14 +430,14 @@ class ReferenceCube(object):
     #@classmethod
     def generate_matched_filter(self, return_mf=False, no_kl=True, **kwargs):
         """
-        This is a wrapper for RDI.generate_matched_filter that defaults to the 
+        This is a wrapper for RDI.generate_matched_filter that defaults to the
         reference cube properties as arguments
         Default behavior: returns nothing: sets self.matched_filter
         If return_mf is True, then returns matched filter
         For more help, see MatchedFilter.generate_matched_filter()
         """
         argdict = {}
-        argdict['psf'] = kwargs.get('psf',self.instrument.psf)
+        argdict['psf'] = kwargs.get('psf', self.instrument.psf)
         # KL basis
         if no_kl is True:
             argdict['kl_basis'] = None
@@ -465,13 +463,13 @@ class ReferenceCube(object):
     @classmethod
     def apply_matched_filter_to_image(self, image, **kwargs):
         """
-        This is a wrapper for RDI.generate_matched_filter that defaults to the 
-        reference cube properties as arguments. 
+        This is a wrapper for RDI.generate_matched_filter that defaults to the
+        reference cube properties as arguments.
         For additional arguments, see MF.apply_matched_filter_to_image()
         Args:
             image: 2-D image
         Returns:
-            mf_map: 2-D image where the matched filter has been applied 
+            mf_map: 2-D image where the matched filter has been applied
                     at the designated positions
         For more help, see RDI.generate_matched_filter()
         """
