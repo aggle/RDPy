@@ -146,13 +146,14 @@ def make_annular_mask(rad_range, phi_range, center, shape):
         pass # should probably throw an exception or something
     return mask
 
-def make_circular_mask(center, rad, shape):
+def make_circular_mask(center, rad, shape, invert=False):
     """
     Make a circular mask around a point, cutting it off for points outside the image
     Inputs: 
         center: (y,x) center of the mask
         rad: radius of the circular mask
         shape: shape of the image
+        invert: [False] if True, 1 *outside* radius and 0 inside radius
     Returns:
         mask: 2D mask where 1 is in the mask and 0 is out of the mask (multiple it by the image)
     """
