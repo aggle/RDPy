@@ -56,10 +56,8 @@ def generate_kl_basis(references, kl_max=None,
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T/np.sqrt(evals[:, None])
     kl_basis = kl_basis * (1./np.sqrt(npix-1))
 
-    # check for negative eigenvalues and remove from KL basis
+    # check for negative eigenvalues and remove them from KL basis
     check_nans = np.any(evals <= 0)
-    #print(check_nans is True)
-    print(kl_basis.shape)
     if check_nans == True:
         neg_evals = (np.where(evals <= 0))[0]
         kl_basis[neg_evals] = 0
