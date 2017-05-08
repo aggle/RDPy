@@ -32,7 +32,8 @@ def generate_kl_basis(references, kl_max=None,
         evals: eigenvalues of the eigenvectors, if desired
     """
     nrefs, npix = references.shape
-    ref_psfs_mean_sub = references - np.expand_dims(np.nanmean(references, axis=-1), -1)
+    ref_psfs_mean_sub = references - np.expand_dims(np.nanmean(references,
+                                                               axis=-1), -1)
     # set nan's to 0 so that they don't contribute to the covar matrix, and don't mess up numpy
     nan_refs = np.where(np.isnan(references))
     ref_psfs_mean_sub[nan_refs] = 0
@@ -41,7 +42,7 @@ def generate_kl_basis(references, kl_max=None,
 
     if kl_max is None: kl_max = covar.shape[0]
     # Limit to the valid number of KL modes
-    tot_basis = covar.shape[0] # max number of KL modes
+    tot_basis = covar.shape[0]  # max number of KL modes
     numbasis = np.clip(kl_max-1, 0, tot_basis-1)
     max_basis = np.max(numbasis)+1
 
@@ -50,16 +51,19 @@ def generate_kl_basis(references, kl_max=None,
 
     # reverse the order
     evals = np.copy(evals[::-1])
-    evecs = np.copy(evecs[:,::-1], order='F')
-    
-    # check for negative eigenvalues
-    check_nans = np.any(evals<=0)
-    if check_nans is True:
-        neg_evals = (np.where(evals <= 0))[0]
-        kl_basis[:,neg_evals] = 0
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T/np.sqrt(evals[:,None])
+    evecs = np.copy(evecs[:, ::-1], order='F')
+
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs).T/np.sqrt(evals[:, None])
     kl_basis = kl_basis * (1./np.sqrt(npix-1))
-    
+
+    # check for negative eigenvalues and remove from KL basis
+    check_nans = np.any(evals <= 0)
+    #print(check_nans is True)
+    print(kl_basis.shape)
+    if check_nans == True:
+        neg_evals = (np.where(evals <= 0))[0]
+        kl_basis[neg_evals] = 0
+
     # assemble objects to return
     return_objs = [kl_basis]
     if return_evecs is True:
@@ -69,8 +73,9 @@ def generate_kl_basis(references, kl_max=None,
     if len(return_objs) == 1:
         return_objs = return_objs[0]
     return return_objs
-    
-def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None, double_project=False):
+
+def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None,
+                                    double_project=False):
     """
     If you already have the KL basis, do the klip subtraction
     Arguments:
