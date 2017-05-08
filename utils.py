@@ -358,3 +358,21 @@ def mean_subtracted_fake_injections(flat_img, flat_psf, scaling=1):
     injected_flat_img = (injected_flat_img.T - np.nanmean(injected_flat_img, axis=-1)).T
     return injected_flat_img
 
+
+####################
+# NaN manipulation #
+####################
+def denan(array):
+    """convert nans to 0's"""
+    new_array = array[:]
+    new_array[np.where(np.isnan(new_array))] = 0
+    return new_array
+
+def renan(array, indices=None):
+    """replace 0's with NaNs"""
+    new_array = array[:]
+    if indices is None:
+        new_array[np.where(array==0)] = np.nan
+    else:
+        new_array[indices] = np.nan
+    return new_array
