@@ -123,19 +123,20 @@ def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
 #########
 # MASKS #
 #########
-def make_annular_mask(rad_range, phi_range, center, shape):
+def make_annular_mask(rad_range, phi_range, center, shape, invert=False):
     """
     Make a mask that covers an annular section
     rad_range: tuple of (inner radius, outer radius)
     phi_range: tuple of (phi0, phi1) (0,2*pi)
     center: row, col center of the image (where rad is measured from)
     shape: image shape tuple
+    invert [False]: if True, 1 *outside* annulus and 0 *inside* annulus
     """
     grid = np.mgrid[:np.float(shape[0]),:np.float(shape[1])]
     grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center, -1, 0)
     rad2D = np.linalg.norm(grid, axis=0)
-    phi2D = np.arctan2(grid[0],grid[1]) + np.pi # 0 to 2*pi
-    mask = np.zeros(shape)
+    phi2D = np.arctan2(grid[0], grid[1]) + np.pi # 0 to 2*pi
+    mask = np.zeros(shape, dtype=np.int)
     if phi_range[0] <= phi_range[1]:
         mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
                       ((phi2D >= phi_range[0]) & (phi2D <= phi_range[1])))] = 1
@@ -160,8 +161,10 @@ def make_circular_mask(center, rad, shape, invert=False):
     grid = np.mgrid[:np.float(shape[0]),:np.float(shape[1])]
     centered_grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center, -1, 0)
     rad2D = np.linalg.norm(centered_grid, axis=0)
-    mask = np.zeros(shape)
+    mask = np.zeros(shape, dtype=np.int32)
     mask[np.where(rad2D <= rad)] = 1
+    if invert is True:
+        mask = np.abs(mask -1)
     return mask
 
 
