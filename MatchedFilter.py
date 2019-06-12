@@ -280,6 +280,8 @@ def correlate_mf_template(image, filter_template,
     # number of dimensions must match
     for dim in range(np.ndim(image) - np.ndim(filter_template)):
         filter_template = np.expand_dims(filter_template, 0)
+    # make sure the filter is mean 0
+    filter_template -= np.nanmean(filter_template, axis=(-1, -2), keepdims=True)
     # apply the filter template
     mf_result = signal.correlate(image, filter_template, mode='same')
     if filter_norm is None:
