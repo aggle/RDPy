@@ -132,39 +132,43 @@ def make_annular_mask(rad_range, phi_range, center, shape, invert=False):
     shape: image shape tuple
     invert [False]: if True, 1 *outside* annulus and 0 *inside* annulus
     """
-    grid = np.mgrid[:np.float(shape[0]),:np.float(shape[1])]
+    grid = np.mgrid[:np.float(shape[0]), :np.float(shape[1])]
     grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center, -1, 0)
     rad2D = np.linalg.norm(grid, axis=0)
-    phi2D = np.arctan2(grid[0], grid[1]) + np.pi # 0 to 2*pi
+    phi2D = np.arctan2(grid[0], grid[1]) + np.pi  # 0 to 2*pi
     mask = np.zeros(shape, dtype=np.int)
     if phi_range[0] <= phi_range[1]:
-        mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
+        mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) &
                       ((phi2D >= phi_range[0]) & (phi2D <= phi_range[1])))] = 1
     elif phi_range[0] > phi_range[1]:
-        mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) & 
+        mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) &
                       ((phi2D >= phi_range[0]) | (phi2D <= phi_range[1])))] = 1
     else:
         pass # should probably throw an exception or something
     return mask
 
-def make_circular_mask(center, rad, shape, invert=False):
+
+def make_circular_mask(center, rad, shape, invert=False, nan=False):
     """
-    Make a circular mask around a point, cutting it off for points outside the image
-    Inputs: 
+    Make a circular mask around a point, 1 inside the radius and 0 outside
+    Inputs:
         center: (y,x) center of the mask
         rad: radius of the circular mask
         shape: shape of the image
         invert: [False] if True, 1 *outside* radius and 0 inside radius
+        nan: replace 0's with np.nan
     Returns:
-        mask: 2D mask where 1 is in the mask and 0 is out of the mask (multiple it by the image)
+        mask: 2D mask where 1 is in the mask and 0 is out of the mask
     """
-    grid = np.mgrid[:np.float(shape[0]),:np.float(shape[1])]
+    grid = np.mgrid[:np.float(shape[0]), :np.float(shape[1])]
     centered_grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center, -1, 0)
     rad2D = np.linalg.norm(centered_grid, axis=0)
     mask = np.zeros(shape, dtype=np.int32)
     mask[np.where(rad2D <= rad)] = 1
     if invert is True:
-        mask = np.abs(mask -1)
+        mask = np.abs(mask - 1)
+    if nan is True:
+        mask[np.where(mask == 0)] = np.nan
     return mask
 
 
