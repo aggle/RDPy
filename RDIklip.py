@@ -15,7 +15,6 @@ from functools import reduce
 import utils
 
 
-
 def generate_kl_basis(references, kl_max=None,
                       return_evecs=False, return_evals=False):
     """
@@ -40,7 +39,8 @@ def generate_kl_basis(references, kl_max=None,
 
     covar = np.cov(ref_psfs_mean_sub)
 
-    if kl_max is None: kl_max = covar.shape[0]
+    if kl_max is None:
+        kl_max = covar.shape[0]
     # Limit to the valid number of KL modes
     tot_basis = covar.shape[0]  # max number of KL modes
     numbasis = np.clip(kl_max-1, 0, tot_basis-1)
@@ -58,7 +58,7 @@ def generate_kl_basis(references, kl_max=None,
 
     # check for negative eigenvalues and remove them from KL basis
     check_nans = np.any(evals <= 0)
-    if check_nans == True:
+    if check_nans is True:
         neg_evals = (np.where(evals <= 0))[0]
         kl_basis[neg_evals] = 0
 
@@ -71,6 +71,7 @@ def generate_kl_basis(references, kl_max=None,
     if len(return_objs) == 1:
         return_objs = return_objs[0]
     return return_objs
+
 
 def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None,
                                     double_project=False):
@@ -101,7 +102,7 @@ def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None,
     else:
         flat_shape = img_flat.shape
     orig_shape = np.copy(img_flat.shape)
-    img_flat = img_flat.reshape(flat_shape)    
+    img_flat = img_flat.reshape(flat_shape)
 
     kl_basis = np.asarray(kl_basis)
     img_flat_mean_sub = img_flat - np.nanmean(img_flat, axis=-1, keepdims=True)
@@ -111,7 +112,7 @@ def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None,
         n_bases = [len(kl_basis)+1]
     if hasattr(n_bases, '__getitem__') is False:
         n_bases = [n_bases]
-        
+
     # project the image onto the PSF basis
     psf_projection = np.array([np.dot(np.dot(img_flat_mean_sub, kl_basis[:n_bases[i]].T),
                                       kl_basis[:n_bases[i]])
@@ -133,8 +134,6 @@ def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None,
     kl_sub = np.rollaxis(kl_sub, 0, -1)
     new_shape = list(leading_shape) + list(kl_sub.shape[-2:])
     return np.squeeze(kl_sub.reshape(new_shape))
-    #kl_sub = np.reshape(kl_sub, new_shape)
-    #return np.squeeze(kl_sub)
 
 
 def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
@@ -185,13 +184,12 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
     # CAREFUL! tiling depends on dimensionality of img_flat_mean_sub
     imgs_tiled = np.tile(img_flat_mean_sub[..., None, :],
                          [1 for i in img_flat_mean_sub.shape[:-1]] + [len(kl_basis), 1])
-
-    coeffs = np.dot(imgs_tiled, kl_basis.T)
+    # the following line is what takes up most of the time
+    #coeffs = np.dot(imgs_tiled, kl_basis.T)
+    coeffs = np.inner(imgs_tiled, kl_basis)
     lower_tri = np.tril(np.ones((kl_basis.shape[0], kl_basis.shape[0])))
     coeffs = coeffs * lower_tri
-
     klip_psf = np.dot(coeffs[..., n_bases, :], kl_basis)
-
     # subtract the projection from the image
     kl_sub = imgs_tiled[..., n_bases, :] - klip_psf
     # put it back in the original shape
