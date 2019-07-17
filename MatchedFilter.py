@@ -410,11 +410,38 @@ def apply_matched_filter_to_images(image, matched_filter=None, locations=None,
 ##############
 # THROUGHPUT #
 ##############
+def fmmf_throughput_correction_stamp(positions, psf, kl_basis, n_bases):
+    """
+    Calculate the normalization aka throughput correction factor for the
+    matched filter, to get flux out
+    New hotness: the PSF should only include the region of the MF!! not the whole image
+      This means that the KL basis should also just be a stamp at the location
+    So: for every location in the KL basis, cut out a PSF-sized stamp
+    and use it to subtract the PSF
+    Arguments:
+        positions: array of [row, col] positions to apply the PSF
+        psfs: just a PSF model stamp
+        kl_basis: the KL basis for projection (KLmax, full_image_pixels)
+        n_bases [None]: list of KL_max values
+    returns:
+        [(n_basis x) Nloc] throughput correction, per KLmax per location
+    """
+    stamp_shape = psf.shape
+    kl_basis_image = utils.make_image_from_region(kl_basis)
+    img_shape = kl_basis_image.shape[-2:]
+    kl_stamp_coords = [utils.get_stamp_coordinates(positions[i],
+                                                   stamp_shape[0],
+                                                   stamp_shape[1],
+                                                   img_shape)
+                       for i in positions]
+    # now, get the stamps
+    kl_stamps = []#[utils.flatten_image_axes(i)]
+
+
 def fmmf_throughput_correction(psfs, kl_basis=None, n_bases=None):
     """
     Calculate the normalization aka throughput correction factor for the
     matched filter, to get flux out
-    New hotness: the PSF should only include the region of the MF!! not the
     Arguments:
         psfs: the flattened model psfs (Nloc, Region_pix)
         kl_basis: the KL basis for projection (KLmax, Region_pix)
