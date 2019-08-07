@@ -383,9 +383,9 @@ class ReferenceCube(object):
             argdict['n_bases'] =  kwargs.get('n_bases', getattr(self,'n_basis'))
         except AttributeError:
             argdict['n_bases'] = len(getattr(self,'kl_basis'))
-        vals = klip_subtract_with_basis(argdict['img_flat'],
-                                        argdict['kl_basis'],
-                                        argdict['n_bases'])
+        vals = RK.klip_subtract_with_basis(argdict['img_flat'],
+                                           argdict['kl_basis'],
+                                           argdict['n_bases'])
         return vals
     
     def generate_kl_basis(self, return_vals=False, **kwargs):
@@ -400,10 +400,10 @@ class ReferenceCube(object):
         argdict['kl_max'] = kwargs.get('kl_max', np.max(self.n_basis))  #len(argdict['references']))
         argdict['return_evecs'] = kwargs.get('return_evecs', False)
         argdict['return_evals'] = kwargs.get('return_evals', False)
-        vals = generate_kl_basis(references=argdict['references'],
-                                 kl_max=argdict['kl_max'],
-                                 return_evecs=argdict['return_evecs'],
-                                 return_evals=argdict['return_evals'])
+        vals = RK.generate_kl_basis(references=argdict['references'],
+                                    kl_max=argdict['kl_max'],
+                                    return_evecs=argdict['return_evecs'],
+                                    return_evals=argdict['return_evals'])
         if return_vals is True:
             return vals
         else:
@@ -525,9 +525,13 @@ def sort_squared_distance(targ, references):
     targ = targ.ravel() # 1-d
     references = references.reshape(references.shape[0],
                                     reduce(lambda x,y: x*y, references.shape[1:]))
-                                    
-    targ_norm = targ/np.nansum(targ)
-    ref_norm = references/np.nansum(references, axis=-1)[:,None]
+
+    # old
+    # targ_norm = targ/np.nansum(targ)
+    # ref_norm = references/np.nansum(references, axis=-1)[:, None]
+    targ_norm = targ/np.linalg.norm(targ)
+    ref_norm = references/np.linalg.norm(references, axis=-1, keepdims=True)
+
     ref_norm = ref_norm[None, :] # make sure dimensionality works out in all cases
     # np.squeeze gets rid of the empty dimension we added above
     dist = np.squeeze(np.sqrt( np.nansum( (targ_norm - ref_norm)**2, axis=-1) ))
@@ -549,8 +553,9 @@ def sort_squared_distance(targ, references):
 #              LEGACY             #
 ###################################
 
+# not actually used
 make_image_from_region = utils.make_image_from_region
-
+# fixed
 klip_subtract_with_basis = RK.klip_subtract_with_basis
-
+# fixed
 generate_kl_basis = RK.generate_kl_basis
