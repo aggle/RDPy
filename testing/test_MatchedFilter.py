@@ -141,6 +141,7 @@ def test_apply_matched_filter_to_scaled_psf(hpf):
     assert_almost_equal(mf_result/flux, 1, 7) 
 
     # Cleanup
+    del data_df
 
 
 @pytest.mark.parametrize('hpf', load_initial_data().index)
@@ -154,16 +155,141 @@ def test_apply_matched_filter_to_random_stamp(hpf):
     mf = MF.create_matched_filter(mf_template_psf)
 
 
+
     stamp = MF.np.random.normal(data_df['kl'][0].mean(),
                                 data_df['kl'][0].std(),
                                 mf.size).reshape(mf.shape)
-    flux_psf = MF.RK.high_pass_filter(stamp)
+    flux_psf = MF.RK.high_pass_filter(stamp, hpf)
 
     # Exercise
     mf_result = MF.apply_matched_filter(mf, flux_psf)
 
     # Validate
     # check that you get 0 flux....
-    assert_almost_equal(mf_result, 0, 4)
+    assert_almost_equal(mf_result, flux_scale, 4)
 
     # Cleanup
+    del data_df
+
+
+
+#### FFT Testing ####
+@pytest.mark.parametrize('hpf', load_initial_data().index)
+def test_apply_matched_filter_to_random_stamp_plus_psf(hpf):
+    """
+    Apply MF to a klip-subtracted stamp with no PSF injected
+    """
+    # Setup
+    data_df = load_initial_data()
+    mf_template_psf = data_df['psf'][hpf]
+    mf = MF.create_matched_filter(mf_template_psf)
+
+
+    stamp = MF.np.random.normal(data_df['kl'][0].mean(),
+                                data_df['kl'][0].std(),
+                                mf.size).reshape(mf.shape)
+    flux_scale = 5 * data_df['kl'][0].std()
+    flux = MF.np.nansum(data_df['psf'][0] * flux_scale)
+    stamp = data_df['psf'][0] * flux_scale + stamp
+
+    flux_psf = MF.RK.high_pass_filter(stamp, hpf)
+
+    # Exercise
+    mf_result = MF.apply_matched_filter(mf, flux_psf)
+
+    # Validate
+    # check that you get get within 10% of the flux for an SNR of >= 5
+    print('mf: {0:0.2f}, true: {1:0.2f}'.format(mf_result, flux_scale))
+    diff = MF.np.abs(1 - mf_result/flux)
+    assert(diff <= 0.25)
+    #assert_almost_equal(mf_result/flux_scale, 1, 2)
+
+    # Cleanup
+    del data_df
+
+
+@pytest.mark.parametrize('hpf', load_initial_data().index)
+def test_apply_matched_filter_fft(hpf):
+    """
+    Apply MF to a klip-subtracted stamp with no PSF injected
+    """
+    # Setup
+    data_df = load_initial_data()
+    mf_template_psf = data_df['psf'][hpf]
+    mf = MF.create_matched_filter(mf_template_psf)
+
+    flux_scale = 479.4
+    flux = MF.np.nansum(data_df['psf'][0] * flux_scale)
+    flux_psf = MF.RK.high_pass_filter(data_df['psf'][0] * flux_scale, hpf)
+
+    # Exercise
+    # in this case, you just want the central pixel
+    mf_result = MF.apply_matched_filter_fft(mf, flux_psf).max()
+
+    # Validate
+    # check that you get the flux back to better than 3%
+    diff = MF.np.abs(1-mf_result/flux)
+    assert(diff < 0.03)
+
+    # Cleanup
+    del data_df
+
+@pytest.mark.parametrize('hpf', load_initial_data().index)
+def test_apply_matched_filter_fft_to_random_stamp(hpf):
+    """
+    Apply MF to a klip-subtracted stamp with no PSF injected
+    """
+    # Setup
+    data_df = load_initial_data()
+    mf_template_psf = data_df['psf'][hpf]
+    mf = MF.create_matched_filter(mf_template_psf)
+
+
+    stamp = MF.np.random.normal(data_df['kl'][0].mean(),
+                                data_df['kl'][0].std()*100,
+                                mf.size).reshape(mf.shape)
+    flux_psf = MF.RK.high_pass_filter(stamp, hpf)
+
+    # Exercise
+    mf_result = MF.apply_matched_filter_fft(mf, flux_psf)
+    # normalize by the sigma
+    mf_snr = mf_result/mf_result.std()
+
+    # Validate
+    # check that the SNR is low
+    assert(MF.np.all(mf_snr < 4))
+
+    # Cleanup
+    del data_df
+
+
+@pytest.mark.parametrize('hpf', load_initial_data().index)
+def test_apply_matched_filter_fft_to_random_stamp_with_psf(hpf):
+    """
+    Apply MF to a klip-subtracted stamp with no PSF injected
+    """
+    # Setup
+    data_df = load_initial_data()
+    mf_template_psf = data_df['psf'][hpf]
+    mf = MF.create_matched_filter(mf_template_psf)
+
+
+    stamp = MF.np.random.normal(data_df['kl'][0].mean(),
+                                data_df['kl'][0].std(),
+                                mf.size).reshape(mf.shape)
+    flux_scale = 10 * data_df['kl'][0].std()
+    stamp = mf_template_psf * flux_scale + stamp
+    flux = Mf.np.nansum(data_df['psf'][0] * flux_scale)
+    flux_psf = MF.RK.high_pass_filter(stamp, hpf)
+
+    # Exercise
+    mf_result = MF.apply_matched_filter(mf, flux_psf).max()
+
+    # Validate
+    # check that you get the flux back to better than 3%
+    diff = MF.np.abs(1-mf_result/flux_scale)
+    assert(diff < 0.03)
+    #assert_almost_equal(mf_result/flux_scale, 1, 2)
+
+    # Cleanup
+    del data_df

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from scipy import signal
 from . import RDIklip as RK
 
 
@@ -24,7 +25,8 @@ def create_matched_filter(template):
 
 def apply_matched_filter(matched_filter, target):
     """
-    The matched filter is just a dot product. Inputs can be 2-D or 1-D
+    The matched filter is just a dot product. Inputs can be 2-D or 1-D.
+    This is only valid for a single location
     Args:
       matched_filter: the matched filter aligned with the target
       target: the target of the matched filter
@@ -32,7 +34,21 @@ def apply_matched_filter(matched_filter, target):
       single value: the result of the matched filtering
     """
     return np.dot(matched_filter.ravel(), target.ravel())
-    
+
+
+def apply_matched_filter_fft(image, matched_filter):
+    """
+    Use the scipy signals processing library to use FFT to convolve the PSF with the whole image
+    Uses scipy.signals.fftconvolve
+    Args:
+      image: the 2-D image you want to apply the MF to
+      matched_filter: the signal you're looking for
+    Returns:
+      mf_result: the matched filtered image, with the same shape as the original image
+    """
+    mf_result = signal.fftconvolve(image, matched_filter, mode='same')
+    return mf_result
+
 
 
 class MatchedFilter(object):
