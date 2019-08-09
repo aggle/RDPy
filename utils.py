@@ -6,7 +6,7 @@ Assorted helper functions for RDI stuff with ALICE data
 import numpy as np
 from astropy import units
 from functools import reduce
-
+from scipy import ndimage
 
 # general rotation matrix
 #def rot_mat(angle):
@@ -387,3 +387,13 @@ def renan(array, indices=None):
     else:
         new_array[indices] = np.nan
     return new_array
+
+
+def oversample_image(image, factor=5):
+    """
+    Oversample an image using ndimage
+    """
+    old_coords = np.indices(image.shape)
+    new_coords = np.indices(np.array(image.shape)*factor) / factor
+    new_img = ndimage.map_coordinates(image, new_coords)
+    return new_img
