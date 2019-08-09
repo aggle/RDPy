@@ -9,7 +9,7 @@ from scipy import ndimage
 from astropy.io import fits
 from astropy import units
 
-from Instrument import Instrument
+from .Instrument import Instrument
 
 # unit definitions for flux conversion
 photflam_units = (units.erg / (units.cm**2 * units.Angstrom * units.count))

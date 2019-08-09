@@ -13,7 +13,7 @@ import scipy.interpolate as sinterp
 
 from functools import reduce
 
-import utils
+from . import utils
 
 
 # High-pass filter
