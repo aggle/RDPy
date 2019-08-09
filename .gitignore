@@ -1,6 +1,6 @@
 *pyc
 *~
 *.bak
-./testing/old_tests
-./testing/.cache
-./testing/.ipynb_checkpoints
+./testing/old_tests/
+./testing/.cache/
+./testing/.ipynb_checkpoints/
