@@ -16,9 +16,9 @@ from scipy.stats import t
 
 from functools import reduce
 
-import utils
-import MatchedFilter as MF
-import RDIklip as RK
+from . import utils
+from . import MatchedFilter as MF
+from . import RDIklip as RK
 
 class ReferenceCube(object):
     """
