@@ -17,55 +17,8 @@ from . import utils
 
 
 # High-pass filter
-def high_pass_filter(img, filtersize=10):
-    """
-    A FFT implmentation of high pass filter.
-    filter = 1 - exp**(-rho**2/filtersize**2) where rho = FT(r)
-    Taken straight from pyKLIP (https://bitbucket.org/pyKLIP/pyklip/)
-    Args:
-        img: a 2D image
-        filtersize: size in Fourier space of the size of the space.
-                    In image space, size=img_size/filtersize
-                    a filtersize of 0 means that no filter should be applied
-    Returns:
-        filtered: the filtered image
-    """
-     # no filter - this line is to make loops easier
-    if filtersize == 0:
-        return img
-
-    # mask NaNs
-    nan_index = np.where(np.isnan(img))
-    # img[nan_index] = 0
-    if np.size(nan_index) > 0:
-        good_index = np.where(~np.isnan(img))
-        y, x = np.indices(img.shape)
-        good_coords = np.array([x[good_index], y[good_index]]).T # shape of Npix, ndimage
-        nan_fixer = sinterp.NearestNDInterpolator(good_coords, img[good_index])
-        fixed_dat = nan_fixer(x[nan_index], y[nan_index])
-        img[nan_index] = fixed_dat
-
-    transform = fft.fft2(img)
-
-    # coordinate system in FFT image
-    u,v = np.meshgrid(fft.fftfreq(transform.shape[1]), fft.fftfreq(transform.shape[0]))
-    # scale u,v so it has units of pixels in FFT space
-    rho = np.sqrt((u*transform.shape[1])**2 + (v*transform.shape[0])**2)
-    # scale rho up so that it has units of pixels in FFT space
-    # rho *= transform.shape[0]
-
-    # create the filter
-    filt = 1. - np.exp(-(rho**2/filtersize**2))
-
-    # apply the filter
-    filtered = np.real(fft.ifft2(transform*filt))
-
-    # restore NaNs
-    filtered[nan_index] = np.nan
-    img[nan_index] = np.nan
-
-    return filtered
-
+## Legacy
+high_pass_filter = utils.high_pass_filter
 
 # KLIP
 def generate_kl_basis(references, kl_max=None,
