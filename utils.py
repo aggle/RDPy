@@ -4,6 +4,7 @@ Assorted helper functions for RDI stuff with ALICE data
 """
 
 import numpy as np
+import numpy.fft as fft
 from astropy import units
 from functools import reduce
 from scipy import ndimage
@@ -26,6 +27,24 @@ rot_mat = lambda angle: np.array([[np.cos(angle*np.pi/180), np.sin(angle*np.pi/1
 ###############
 # COORDINATES #
 ###############
+def get_radial_coordinate(shape, center=None):
+    """
+    Transform a set of x-y coordinates into a set of radius-phi coordinates
+    Args:
+      shape: the image shape
+      center: the center; if None, then do shape/2
+    Returns:
+      Nx x Ny grid of radii
+      Nx x Ny grid of angles (0-2*pi)
+    """
+    if center is None:
+        center = np.array(shape)/2.
+    grid = np.mgrid[:np.float(shape[0]), :np.float(shape[1])]
+    grid = np.rollaxis(np.rollaxis(grid, 0, grid.ndim) - center + 0.5, -1, 0)
+    rad2D = np.linalg.norm(grid, axis=0)
+    phi2D = np.arctan2(grid[0], grid[1]) + np.pi  # 0 to 2*pi
+    return rad2D, phi2D
+
 def get_stamp_coordinates(center, drow, dcol, imshape):
     """
     get pixel coordinates for a stamp with width dcol, height drow, and center `center` embedded
@@ -211,7 +230,7 @@ def make_image_from_region(region, indices=None, shape=None):
     put the flattened region back into an image. if no indices or shape are specified, assumes that
     the region of N pixels is a square with Nx = Ny = sqrt(N)
     Input:
-        region: [Nimg,[Nx,[Ny...]]] x Npix array (any shape as long as the last dim is the pixels)
+        region: [Ni,[Nj,[Nk...]]] x Npix array (any shape as long as the last dim is the pixels)
         indices: [None] Npix array of flattened pixel coordinates 
                  corresponding to the region
         shape: [None] image shape
@@ -227,6 +246,7 @@ def make_image_from_region(region, indices=None, shape=None):
         shape = (Nside, Nside)
 
     img = np.ravel(np.zeros(shape))*np.nan
+    # this is super memory inefficient
     # handle the case of region being a 2D array by extending the img axes
     if region.ndim > 1:
         # assume last dimension is the pixel
@@ -245,7 +265,7 @@ def make_image_from_region(region, indices=None, shape=None):
 #################
 # PSF INJECTION #
 #################
-def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False, hpf=None):
     """
     ### use inject_psf() as a wrapper, do not call this function directly ###
     Inject a PSF into an image at a location given by center. Optional: scale PSF.
@@ -259,10 +279,13 @@ def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_f
              if scale_flux is None, don't scale psf
         subtract_mean: (False) mean-subtract before returning
         return_flat: (False) flatten the array along the pixels axis before returning
+        hpf [None]: pass a high-pass filter width for high-pass filtering.
+                    If used, the psf must be the *unfiltered* version
     Returns:
        injected_img: 2-D image or 3D cube with the injected PSF(s)
        injection_psf: (if return_psf=True) 2-D normalized PSF full image
     """
+
     if scale_flux is None:
         scale_flux = np.array([1])
     elif np.ndim(scale_flux) == 0:
@@ -272,6 +295,14 @@ def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_f
     # get the right dimensions
     img_tiled = np.tile(img, (np.size(scale_flux),1,1))
     psf_tiled = np.tile(psf, (np.size(scale_flux),1,1))
+
+
+    if hpf is not None:
+        # scale the PSF and then HPF it
+        psf_tiled = scale_flux * psf_tiled
+        scale_flux[:] = 1
+        for i in range(psf_tiled.shape[0]):
+            psf_tiled[i] = high_pass_filter_stamp(psf_tiled[i], hpf, img.shape[-2:])
 
     # get the injection pixels
     injection_pix, psf_pix = get_stamp_coordinates(center, psf.shape[0], psf.shape[1], img.shape)
@@ -299,7 +330,7 @@ def _inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_f
     return np.squeeze(full_injection)
 
 
-def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False):
+def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_flat=False, hpf=None):
     """
     Inject a PSF into an image at a location given by center. Optional: scale PSF
     The PSF is injected by *adding* it to the provided image, not by replacing the pixels
@@ -313,17 +344,18 @@ def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_fl
              if scale_flux is None, don't scale psf
         subtract_mean: (False) mean-subtract before returning
         return_flat: (False) flatten the array along the pixels axis before returning
+        hpf [None]: pass a high-pass filter width for high-pass filtering.
+                    If used, the psf must be the *unfiltered* version
     Returns:
        injected_img: 2-D image or 3D cube with the injected PSF(s)
        injection_psf: (if return_psf=True) 2-D normalized PSF full image
     """
-
     injected_psf=None
     if np.ndim(center) == 1:
-        injected_psf  = _inject_psf(img, psf, center, scale_flux, subtract_mean, return_flat)
+        injected_psf  = _inject_psf(img, psf, center, scale_flux, subtract_mean, return_flat, hpf)
     elif np.ndim(center) > 1:
         injected_psf = np.sum(np.array([_inject_psf(img, psf, c, scale_flux,
-                                                    subtract_mean, return_flat)
+                                                    subtract_mean, return_flat, hpf)
                                         for c in center]), axis=0)
     return injected_psf
 
@@ -397,3 +429,84 @@ def oversample_image(image, factor=5):
     new_coords = np.indices(np.array(image.shape)*factor) / factor
     new_img = ndimage.map_coordinates(image, new_coords)
     return new_img
+
+
+## High-pass filterin
+def high_pass_filter(img, filtersize=10):
+    """
+    A FFT implmentation of high pass filter.
+    filter = 1 - exp**(-rho**2/filtersize**2) where rho = FT(r)
+    Taken straight from pyKLIP (https://bitbucket.org/pyKLIP/pyklip/)
+    Args:
+        img: a 2D image
+        filtersize: size in Fourier space of the size of the space.
+                    In image space, size=img_size/filtersize
+                    a filtersize of 0 means that no filter should be applied
+    Returns:
+        filtered: the filtered image
+    """
+     # no filter - this line is to make loops easier
+    if filtersize == 0:
+        return img
+
+    # mask NaNs
+    nan_index = np.where(np.isnan(img))
+    # img[nan_index] = 0
+    if np.size(nan_index) > 0:
+        good_index = np.where(~np.isnan(img))
+        y, x = np.indices(img.shape)
+        good_coords = np.array([x[good_index], y[good_index]]).T # shape of Npix, ndimage
+        nan_fixer = sinterp.NearestNDInterpolator(good_coords, img[good_index])
+        fixed_dat = nan_fixer(x[nan_index], y[nan_index])
+        img[nan_index] = fixed_dat
+
+    transform = fft.fft2(img)
+
+    # coordinate system in FFT image
+    u,v = np.meshgrid(fft.fftfreq(transform.shape[1]), fft.fftfreq(transform.shape[0]))
+    # scale u,v so it has units of pixels in FFT space
+    rho = np.sqrt((u*transform.shape[1])**2 + (v*transform.shape[0])**2)
+    # scale rho up so that it has units of pixels in FFT space
+    # rho *= transform.shape[0]
+
+    # create the filter
+    filt = 1. - np.exp(-(rho**2/filtersize**2))
+
+    # apply the filter
+    filtered = np.real(fft.ifft2(transform*filt))
+
+    # restore NaNs
+    filtered[nan_index] = np.nan
+    img[nan_index] = np.nan
+
+    return filtered
+
+def high_pass_filter_stamp(stamp, filterwidth, target_image_shape, stamp_center=None):
+    """
+    Take special care when HPF-ing a stamp, because the image is usually
+    a different shape from the target images and this affects the computation
+    of the frequencies.
+    The approach we're taking here is to assume the PSF model is smaller than
+    the target images, and pad it with 0's before HPF.
+    Returns:
+      PSF with the high-pass filter applied
+    """
+    # calculate the padding. If odd, add more padding to the front.
+    diff = np.array(target_image_shape) - np.array(stamp.shape)
+    lo_pad = np.ceil(diff/2).astype(np.int)
+    hi_pad = np.floor(diff/2).astype(np.int)
+    pad_stamp = np.pad(stamp, np.array([lo_pad, hi_pad]).T,
+                       mode='constant', constant_values=0)
+    # Now that the STAMP is padded, apply the high pass filter
+    filt_pad_stamp = high_pass_filter(pad_stamp, filterwidth)
+    # cut out a stamp of the filtered STAMP in the original shape
+    #pad_center = np.array(np.unravel_index(stamp.argmax(), stamp.shape)) + lo_pad
+    pad_center = np.floor(np.array(stamp.shape)/2).astype(int) + lo_pad
+    pad_stamp_coords = get_stamp_coordinates(pad_center,
+                                             *stamp.shape,
+                                             pad_stamp.shape)[0]
+    filt_stamp = filt_pad_stamp[pad_stamp_coords[0],
+                                pad_stamp_coords[1]]
+    return filt_stamp
+
+
