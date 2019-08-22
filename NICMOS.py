@@ -10,6 +10,7 @@ from astropy.io import fits
 from astropy import units
 
 from .Instrument import Instrument
+from . import utils
 
 # unit definitions for flux conversion
 photflam_units = (units.erg / (units.cm**2 * units.Angstrom * units.count))
@@ -148,8 +149,10 @@ class NICMOS(Instrument):
         center = np.array(center)
         #rad = np.int(np.floor(diam/2.)) + diam%2
         init_flux = np.nansum(psf)
-        psf_stamp = psf[center[0]-rad : center[0]+rad+1, #+ diam%2,
-                        center[1]-rad : center[1]+rad+1].copy()#, + diam%2].copy()
+        x, y = utils.get_stamp_coordinates(center, 2*rad+1, 2*rad+1, psf.shape)[0]
+        #psf_stamp = psf[center[0]-rad : center[0]+rad+1, #+ diam%2,
+        #                center[1]-rad : center[1]+rad+1].copy()#, + diam%2].copy()
+        psf_stamp = psf[x, y].copy()
         final_flux = np.nansum(psf_stamp)
         self.psf = psf_stamp
         self.frac_flux = final_flux/np.float(init_flux)
