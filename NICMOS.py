@@ -34,7 +34,7 @@ class NICMOS(Instrument):
         self.IWA = 600 * units.mas # diameter, Schneider 2003, "Coronagraphy with NICMOS" e.g.
         self.IWApix = self.IWA/self.pix_scale
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
-
+        self.psf_fwhm = {'F160W': 1.89 * units.pixel}
     # image orientation
     def orient_nup_eleft(self, img, header):
         """
