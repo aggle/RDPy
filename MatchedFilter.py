@@ -87,6 +87,23 @@ def apply_matched_filter_fft(image, matched_filter):
     mf_result = signal.fftconvolve(image, matched_filter, mode='same')
     return mf_result
 
+def apply_matched_filter_fft_to_cube(cube, matched_filter):
+    """
+    Use the scipy signals processing library to use FFT to convolve the PSF with the whole image
+    Uses scipy.signals.fftconvolve
+    Args:
+      cube: the 3-D cube of images you want to apply the MF to (last 2 axes are image pixels)
+      matched_filter: the signal you're looking for
+    Returns:
+      mf_result: the matched filtered image, with the same shape as the original image
+    """
+    orig_shape = cube.shape
+    cube = utils.flatten_leading_axes(cube, -2)
+    #mf_result = np.array([apply_matched_filter_fft(c, matched_filter) for c in cube])
+    mf_result = np.array(list(map(lambda img: apply_matched_filter_fft(img, matched_filter), cube)))
+    mf_result = np.reshape(mf_result, orig_shape)
+    return mf_result
+
 
 
 class MatchedFilter(object):
