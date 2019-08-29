@@ -504,7 +504,114 @@ class ReferenceCube(object):
 
 
 
-    
+###############################
+## Reference image selection ##
+###############################
+# these metrics are described in Ruane et al., 2019
+
+def calc_refcube_mse(targ, references):
+    """
+    Calculate the pixel-wise mean squared error (MSE) for each reference
+    compared to the target
+    Args:
+      targ: the target image to subtract
+      references: the cube of references [Nimg x Npix] (can also be 3-d)
+    Returns:
+      mse_values: Nref array of MSE values
+    """
+    npix = targ.size
+    targ = targ.ravel() # 1-d
+    references = references.reshape(references.shape[0],
+                                    reduce(lambda x,y: x*y, references.shape[1:]))
+
+    mse = np.squeeze(np.nansum((targ - references)**2, axis=-1) / npix)
+
+    return mse
+
+
+def calc_refcube_pcc(targ, references):
+    """
+    Compute the Pearson correlation coefficient (PCC) between the target and the refs
+    PCC(a, b) = cov(a, b)/(std(a) std(b))
+    Args:
+      targ: 1- or 2-d target image
+      references: 2- or 3-D cube of references
+    Returns:
+      pcc: Nref array of PCC values
+    """
+    npix = targ.size
+    targ = targ.ravel() # 1-d
+    references = references.reshape(references.shape[0],
+                                    reduce(lambda x,y: x*y, references.shape[1:]))
+
+    #a = targ - np.nanmean(targ)
+    #b = references - np.nanmean(references, axis=-1, keepdims=True)
+
+    #cov = np.nansum(a * b, axis=-1) / (npix-1)
+    cov = np.cov(np.concatenate([targ[None, :], references], axis=0))[0, 1:]
+    pcc = cov / ( np.std(targ) * np.std(references, axis=-1) )
+
+    return pcc
+
+
+# Structural something something something
+
+def ssim_luminance(targ, references, const=1e-16):
+    """
+    Returns a 1 x Nref array
+    """
+    a = 2 * np.nanmean(targ)*np.nanmean(references, axis=-1) + const
+    b = np.nanmean(targ)**2 + np.nanmean(references)**2 + const
+    return a / b
+
+def ssim_contrast(targ, references, const=1e-16):
+    a = 2 * np.std(targ) * np.std(references, axis=-1) + const
+    b = np.std(targ)**2 + np.std(references, axis=-1)**2 + const
+    return a / b
+
+def ssim_structural(targ, references, const=1e-16):
+    a = np.cov(np.concatenate([targ[None, :], references], axis=0))[0, 1:] + const
+    b = np.std(targ) * np.std(references, axis=-1) + const
+    return a/b
+
+def get_ssim_pieces(pix, targ, references, FWHM=3):
+    """
+    Calculate the SSIM values for one pixel
+    """
+    npix = targ.size
+    imshape = targ.shape
+    row, col = np.unravel_index(pix, imshape)
+    coords = utils.get_stamp_coordinates((row, col), FWHM, FWHM, imshape)[0]
+    # get target and reference stamps
+    targ_stamp = utils.flatten_image_axes(targ[coords[0], coords[1]])
+    refs_stamp = utils.flatten_image_axes(references[:, coords[0], coords[1]])
+    # pass target and reference cubes to luminance, contrast, and structural
+    return (ssim_luminance(targ_stamp, refs_stamp),\
+            ssim_contrast(targ_stamp, refs_stamp),\
+            ssim_structural(targ_stamp, refs_stamp))
+
+def calc_refcube_ssim(targ, references):
+    """
+    Complicated
+    """
+    FWHM = 5 # pixels, assume for now
+    npix = targ.size
+    imshape = targ.shape
+    #targ = targ.ravel() # 1-d
+    #references = references.reshape(references.shape[0],
+    #                                reduce(lambda x,y: x*y, references.shape[1:]))
+
+    # these values are computed over a FWHMxFWHM window centered on pixel i
+    # use a dataframe for easier data tracking and function applying
+    df = pd.DataFrame(index = np.arange(npix), columns = ['lum', 'con', 'str'])
+    df[df.columns] = list(map(lambda i: get_ssim_pieces(i, targ, references),
+                              np.arange(npix)))
+    df['ssim_per_pix'] = df.apply(lambda row: [reduce(lambda x, y: x*y, row)],
+                                  axis=1)
+    ssim = np.nansum(np.squeeze(np.stack(df['ssim_per_pix'].values)), axis=0)
+    ssim = ssim / npix
+    return ssim
+
 ############################
 ## Other useful functions ##
 ############################
