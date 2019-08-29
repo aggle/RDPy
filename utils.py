@@ -55,8 +55,9 @@ def get_stamp_coordinates(center, drow, dcol, imshape):
         dcol: width of stamp
         imshape: total size of image the stamp is a part of
     Returns:
-        img_coords: the stamp indices for the full image array (img[img_coords_for_stamp])
-        stamp_coords: the stamp indices for selecting the part of the stamp that goes in the image (stamp[stamp_coords])
+        img_coords: the stamp indices for the full image array (i.e. stamp = img[img_coords])
+        stamp_coords: the stamp indices for selecting the part of the stamp that goes in the image (i.e. stamp[stamp_coords])
+            this is relevant for stamps on the edge of the images
     """
     # handle odd and even: 1 if odd, 0 if even
     oddflag = np.array((dcol%2, drow%2))
@@ -487,9 +488,9 @@ def high_pass_filter_stamp(stamp, filterwidth, target_image_shape, stamp_center=
     a different shape from the target images and this affects the computation
     of the frequencies.
     The approach we're taking here is to assume the PSF model is smaller than
-    the target images, and pad it with 0's before HPF.
+    the target images, and pad it with 0's before applying the HPF.
     Returns:
-      PSF with the high-pass filter applied
+      stamp with the high-pass filter applied, with the same shape as the original stamp
     """
     # calculate the padding. If odd, add more padding to the front.
     diff = np.array(target_image_shape) - np.array(stamp.shape)
