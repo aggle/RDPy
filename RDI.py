@@ -12,7 +12,7 @@ from astropy import units
 
 import scipy.linalg as la
 import scipy.ndimage as ndimage
-from scipy.stats import t
+from scipy import stats
 
 from functools import reduce
 
@@ -509,6 +509,7 @@ class ReferenceCube(object):
 ###############################
 # these metrics are described in Ruane et al., 2019
 
+# Mean squared error (MSE)
 def calc_refcube_mse(targ, references):
     """
     Calculate the pixel-wise mean squared error (MSE) for each reference
@@ -524,11 +525,12 @@ def calc_refcube_mse(targ, references):
     references = references.reshape(references.shape[0],
                                     reduce(lambda x,y: x*y, references.shape[1:]))
 
-    mse = np.squeeze(np.nansum((targ - references)**2, axis=-1) / npix)
+    #mse = np.squeeze(np.nansum((targ - references)**2, axis=-1) / npix)
+    mse = (np.linalg.norm(targ-references, axis=-1)**2) / npix
 
     return mse
 
-
+# Pearson correlation coefficient (PCC)
 def calc_refcube_pcc(targ, references):
     """
     Compute the Pearson correlation coefficient (PCC) between the target and the refs
@@ -548,15 +550,14 @@ def calc_refcube_pcc(targ, references):
     #b = references - np.nanmean(references, axis=-1, keepdims=True)
 
     #cov = np.nansum(a * b, axis=-1) / (npix-1)
-    cov = np.cov(np.concatenate([targ[None, :], references], axis=0))[0, 1:]
-    pcc = cov / ( np.std(targ) * np.std(references, axis=-1) )
-
+    #cov = np.cov(np.concatenate([targ[None, :], references], axis=0))[0, 1:]
+    #pcc = cov / ( np.std(targ) * np.std(references, axis=-1) )
+    pcc = np.array([stats.pearsonr(targ, r)[0] for r in references])
     return pcc
 
-
-# Structural something something something
-
-def ssim_luminance(targ, references, const=1e-16):
+# Structural similarity index metric (SSIM), with helper functions
+stab_const = 0  # constant for numerical stability
+def ssim_luminance(targ, references, const=stab_const):
     """
     Returns a 1 x Nref array
     """
@@ -564,23 +565,30 @@ def ssim_luminance(targ, references, const=1e-16):
     b = np.nanmean(targ)**2 + np.nanmean(references)**2 + const
     return a / b
 
-def ssim_contrast(targ, references, const=1e-16):
+def ssim_contrast(targ, references, const=stab_const):
     a = 2 * np.std(targ) * np.std(references, axis=-1) + const
     b = np.std(targ)**2 + np.std(references, axis=-1)**2 + const
     return a / b
 
-def ssim_structural(targ, references, const=1e-16):
+def ssim_structural(targ, references, const=stab_const):
     a = np.cov(np.concatenate([targ[None, :], references], axis=0))[0, 1:] + const
     b = np.std(targ) * np.std(references, axis=-1) + const
-    return a/b
+    return a / b
 
-def get_ssim_pieces(pix, targ, references, FWHM=3):
+def get_ssim_pieces(pixel, targ, references, FWHM=3):
     """
-    Calculate the SSIM values for one pixel
+    Calculate the three SSIM components for one pixel
+    Args:
+      pixel: the raveled pixel coordinate
+      targ: target image
+      references: reference cube
+      FWHM: psf fwhm. gets rounded up to the nearest pixel.
     """
-    npix = targ.size
+    FWHM = np.ceil(FWHM).astype(np.int)
+    if FWHM < 3:
+        FWHM = 3 # box must be at least 3 pixels wide
     imshape = targ.shape
-    row, col = np.unravel_index(pix, imshape)
+    row, col = np.unravel_index(pixel, imshape)
     coords = utils.get_stamp_coordinates((row, col), FWHM, FWHM, imshape)[0]
     # get target and reference stamps
     targ_stamp = utils.flatten_image_axes(targ[coords[0], coords[1]])
@@ -590,11 +598,11 @@ def get_ssim_pieces(pix, targ, references, FWHM=3):
             ssim_contrast(targ_stamp, refs_stamp),\
             ssim_structural(targ_stamp, refs_stamp))
 
-def calc_refcube_ssim(targ, references):
+def calc_refcube_ssim(targ, references, FWHM=3):
     """
-    Complicated
+    Structural Similarity Index Metric (SSIM)
+    SSIM_k = 1/Npix * Sum_i^Npix (L_i * C_i * S_i) for the kth reference frame
     """
-    FWHM = 5 # pixels, assume for now
     npix = targ.size
     imshape = targ.shape
     #targ = targ.ravel() # 1-d
@@ -604,17 +612,19 @@ def calc_refcube_ssim(targ, references):
     # these values are computed over a FWHMxFWHM window centered on pixel i
     # use a dataframe for easier data tracking and function applying
     df = pd.DataFrame(index = np.arange(npix), columns = ['lum', 'con', 'str'])
-    df[df.columns] = list(map(lambda i: get_ssim_pieces(i, targ, references),
+    # df.apply doesn't prodcast correctly, so use list(map())
+    df[df.columns] = list(map(lambda i: get_ssim_pieces(i, targ, references, FWHM),
                               np.arange(npix)))
-    df['ssim_per_pix'] = df.apply(lambda row: [reduce(lambda x, y: x*y, row)],
-                                  axis=1)
-    ssim = np.nansum(np.squeeze(np.stack(df['ssim_per_pix'].values)), axis=0)
-    ssim = ssim / npix
+    #df['ssim_per_pix'] = df[['lum', 'con', 'str']].apply(lambda row: [reduce(lambda x, y: x*y, row)],
+    #                              axis=1)
+    #ssim = np.nansum(np.squeeze(np.stack(df['ssim_per_pix'].values)), axis=0)
+    #ssim = ssim / npix
+    df['ssim_per_pix'] = df.prod(axis=1)  # multiply all the columns together
+    ssim = df['ssim_per_pix'].sum() / npix # sum the arrays together and normalize
     return ssim
 
-############################
-## Other useful functions ##
-############################
+
+# depracated - use MSE instead
 def sort_squared_distance(targ, references):
     """
     Calculate the euclidean distance between a target image and a set of reference images
