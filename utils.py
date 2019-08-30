@@ -45,54 +45,6 @@ def get_radial_coordinate(shape, center=None):
     phi2D = np.arctan2(grid[0], grid[1]) + np.pi  # 0 to 2*pi
     return rad2D, phi2D
 
-def get_stamp_coordinates(center, drow, dcol, imshape):
-    """
-    get pixel coordinates for a stamp with width dcol, height drow, and center `center` embedded
-    in an image of dimensions imshape
-    Arguments:
-        center: (row, col) center of the stamp
-        drow: height of stamp
-        dcol: width of stamp
-        imshape: total size of image the stamp is a part of
-    Returns:
-        img_coords: the stamp indices for the full image array (i.e. stamp = img[img_coords])
-        stamp_coords: the stamp indices for selecting the part of the stamp that goes in the image (i.e. stamp[stamp_coords])
-            this is relevant for stamps on the edge of the images
-    """
-    # handle odd and even: 1 if odd, 0 if even
-    oddflag = np.array((dcol%2, drow%2))
-    colrad = np.int(np.floor(dcol))/2 
-    rowrad = np.int(np.floor(drow))/2 
-
-    rads = np.array([rowrad, colrad], dtype=np.int)
-    center = np.array([center[0],center[1]],dtype=np.int) #+ oddflag
-    img = np.zeros(imshape)
-    stamp = np.ones((drow,dcol))
-    full_stamp_coord = np.indices(stamp.shape) + center[:,None,None]  - rads[:,None,None]
-    # check for out-of-bounds values
-    # boundaries
-    row_lb,col_lb = (0, 0)
-    row_hb,col_hb = imshape
-
-    rowcheck_lo, colcheck_lo = (center - rads)
-    rowcheck_hi, colcheck_hi = ((imshape-center) - rads) - oddflag[::-1]
-
-    row_start, col_start = 0,0
-    row_end, col_end = stamp.shape
-
-    if rowcheck_lo < 0:
-        row_start = -1*rowcheck_lo
-    if colcheck_lo < 0:
-        col_start = -1*colcheck_lo
-    if rowcheck_hi < 0:
-        row_end = rowcheck_hi
-    if colcheck_hi < 0:
-        col_end = colcheck_hi
-
-    # pull out the selections
-    img_coords = full_stamp_coord[:,row_start:row_end,col_start:col_end]
-    stamp_coords = np.indices(stamp.shape)[:,row_start:row_end,col_start:col_end]
-    return (img_coords, stamp_coords)
 
 
 def rotate_centered_coordinates(coord, angle, center=(40,40)):
@@ -141,6 +93,119 @@ def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
     return (row, col)
 
+
+##########
+# STAMPS #
+##########
+
+def get_stamp_coordinates(center, drow, dcol, imshape, nanpad=False):
+    """
+    get pixel coordinates for a stamp with width dcol, height drow, and center `center` embedded
+    in an image of dimensions imshape
+    Arguments:
+        center: (row, col) center of the stamp
+        drow: height of stamp
+        dcol: width of stamp
+        imshape: total size of image the stamp is a part of
+    Returns:
+        img_coords: the stamp indices for the full image array (i.e. stamp = img[img_coords])
+        stamp_coords: the stamp indices for selecting the part of the stamp
+                      that goes in the image (i.e. stamp[stamp_coords]).
+                      this is relevant for stamps on the edge of the images -
+                      e.g. if you want to matched filter the image edge, you should
+                      plug these coordinates into your matched filter stamp to
+                      select only the relevant part of the matched filter
+    """
+    # handle odd and even: 1 if odd, 0 if even
+    oddflag = np.array((dcol%2, drow%2))
+    colrad = np.int(np.floor(dcol))/2
+    rowrad = np.int(np.floor(drow))/2
+
+    rads = np.array([rowrad, colrad], dtype=np.int)
+    center = np.array([center[0],center[1]],dtype=np.int) #+ oddflag
+    img = np.zeros(imshape)
+    stamp = np.ones((drow,dcol))
+    full_stamp_coord = np.indices(stamp.shape) + center[:,None,None]  - rads[:,None,None]
+    # check for out-of-bounds values
+    # boundaries
+    row_lb,col_lb = (0, 0)
+    row_hb,col_hb = imshape
+
+    rowcheck_lo, colcheck_lo = (center - rads)
+    rowcheck_hi, colcheck_hi = ((imshape-center) - rads) - oddflag[::-1]
+
+    row_start, col_start = 0,0
+    row_end, col_end = stamp.shape
+
+    if rowcheck_lo < 0:
+        row_start = -1*rowcheck_lo
+    if colcheck_lo < 0:
+        col_start = -1*colcheck_lo
+    if rowcheck_hi < 0:
+        row_end = rowcheck_hi
+    if colcheck_hi < 0:
+        col_end = colcheck_hi
+
+    # pull out the selections
+    img_coords = full_stamp_coord[:,row_start:row_end,col_start:col_end]
+    stamp_coords = np.indices(stamp.shape)[:,row_start:row_end,col_start:col_end]
+    return (img_coords, stamp_coords)
+
+
+def get_stamp_from_image(image, stamp_shape, coord):
+    """
+    Pull a stamp out from an image with a given shape centered at
+    a given pixel.
+    Args:
+      image: 2-D image
+      stamp_shape: the shape of the stamps
+      coord: the flattened coordinate of the pixel of interest
+    Returns:
+      stamp_cube: a 3-D array of the stamps, in order of the pixel coordinates
+    Args:
+    """
+    try:
+        # if the coordinate isn't flat, return None
+        # this is not a smart way to fail
+        assert(isinstance(coord, np.int) is False)
+    except:
+        print("coord ({0}) in get_stamp_from_image needs to be 1-D flattened coordinate".format(coord))
+        return None
+    row, col= np.unravel_index(coord, image.shape)
+    img_coord, stamp_coord = get_stamp_coordinates((row, col),
+                                                   *stamp_shape,
+                                                   image.shape)
+    img_coord_flat = np.ravel_multi_index(img_coord, image.shape)
+    stamp_coord_flat = np.ravel_multi_index(stamp_coord, stamp_shape)
+    stamp = image.flat[img_coord_flat].copy()
+    # if the actual stamp's shape is not the same as the input stamp shape,
+    # it's an edge stamp. In this case, pad the edges with nan
+    if stamp.shape != stamp_shape:
+        tmp = np.zeros(stamp_shape) * np.nan
+        tmp.flat[stamp_coord_flat] = stamp.flat
+        stamp = tmp
+    return stamp
+
+
+def get_cube_of_stamps_from_image(image, stamp_shape, pixel_coordinates=None):
+    """
+    This works by making a stamp for each pixel in the region of interest.
+    You can specify which pixels using pixel_indices - note that these are
+    the *flattened* array coordinates.
+    Mostly a wrapper for get_stamp_from_image
+    Args:
+      image: 2-D image
+      stamp_shape: the shape of the stamps
+      pixel_indices [None]: the (flattened) coordinates pixels you are interested in
+                            if None, defaults to full image
+    Returns:
+      stamp_cube: a 3-D array of the stamps, in order of the pixel coordinates
+    """
+    if pixel_coordinates is None:
+        pixel_coordinates = np.arange(image.size)
+    func = lambda coord: get_stamp_from_image(image, stamp_shape, coord)
+    cube = np.array(list(map(func, pixel_coordinates)))
+    return cube
 
 #########
 # MASKS #
@@ -261,6 +326,8 @@ def make_image_from_region(region, indices=None, shape=None):
     img = np.squeeze(img.reshape(list(oldshape[:-1])+list(shape)))
 
     return img
+
+
 
 
 #################
@@ -432,7 +499,7 @@ def oversample_image(image, factor=5):
     return new_img
 
 
-## High-pass filterin
+## High-pass filtering
 def high_pass_filter(img, filtersize=10):
     """
     A FFT implmentation of high pass filter.
