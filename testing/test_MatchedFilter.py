@@ -43,7 +43,7 @@ def set_random_seed():
     MF.np.random.seed(random_seed)
 
 @pytest.fixture
-def load_initial_data():
+def real_data():
     """
     Loads the beta Pic, HR 8799, and reference data for testing
     Dataframe columns: 
@@ -56,9 +56,9 @@ def load_initial_data():
     return(data_df)
 
 
-def test_load_initial_data():
+def test_real_data():
     # Setup
-    df = load_initial_data()
+    df = real_data()
 
     # Exercise 1 - test the data type
     # Validate
@@ -85,13 +85,13 @@ def test_calc_matched_filter_throughput():
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
-def test_create_matched_filter(load_initial_data, hpf):
+def test_create_matched_filter(real_data, hpf):
     """
     Test that you can create a matched filter
     Should have mean 0
     """
     # Setup
-    psf = load_initial_data['psf'][hpf]
+    psf = real_data['psf'][hpf]
     # Exercise
     mf = MF.create_matched_filter(psf)
     # Validate
@@ -101,12 +101,12 @@ def test_create_matched_filter(load_initial_data, hpf):
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
-def test_apply_matched_filter_to_null_psf(load_initial_data, hpf):
+def test_apply_matched_filter_to_null_psf(real_data, hpf):
     """
     Just apply a matched filter to an image of 0's
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     flux_psf = MF.np.zeros_like(mf)
@@ -121,12 +121,12 @@ def test_apply_matched_filter_to_null_psf(load_initial_data, hpf):
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
-def test_apply_matched_filter_to_flat_psf(load_initial_data, hpf):
+def test_apply_matched_filter_to_flat_psf(real_data, hpf):
     """
     Just apply a matched filter to an image of 1's
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     flux_psf = MF.np.ones_like(mf)
@@ -141,17 +141,17 @@ def test_apply_matched_filter_to_flat_psf(load_initial_data, hpf):
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
-def test_apply_matched_filter_to_psf_template(load_initial_data, hpf):
+def test_apply_matched_filter_to_psf_template(real_data, hpf):
     """
     Just apply a matched filter the PSF model which has a total flux of 1
     """
     # Setup
-    #data_df = load_initial_data()
-    mf_template_psf = load_initial_data.loc[hpf, 'psf']
+    #data_df = real_data()
+    mf_template_psf = real_data.loc[hpf, 'psf']
     mf = MF.create_matched_filter(mf_template_psf)
 
     flux_scale = 1.
-    flux_psf, flux = prepare_injection(load_initial_data['psf'][0],
+    flux_psf, flux = prepare_injection(real_data['psf'][0],
                                        flux_scale,
                                        hpf)
 
@@ -165,16 +165,16 @@ def test_apply_matched_filter_to_psf_template(load_initial_data, hpf):
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
-def test_apply_matched_filter_to_scaled_psf(load_initial_data, hpf):
+def test_apply_matched_filter_to_scaled_psf(real_data, hpf):
     """
     This time, scale the PSF model to some arbitrary flux
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     flux_scale = 479.4
-    img, expected_flux = prepare_injection(load_initial_data.loc[0, 'psf'],
+    img, expected_flux = prepare_injection(real_data.loc[0, 'psf'],
                                            flux_scale,
                                            hpf)
     # Exercise
@@ -189,24 +189,24 @@ def test_apply_matched_filter_to_scaled_psf(load_initial_data, hpf):
 
 @pytest.mark.parametrize('hpf', hpf_index)
 #@pytest.mark.skip(reason="Using FFT matched filter, not dot product")
-def test_apply_matched_filter_to_random_stamp(hpf, load_initial_data):
+def test_apply_matched_filter_to_random_stamp(hpf, real_data):
     """
     Apply MF to a klip-subtracted stamp with no PSF injected
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
 
-    flux_center = 0  # load_initial_data['kl'][0].mean()
-    noise_scale = 1  # load_initial_data['kl'][0].std()
+    flux_center = 0  # real_data['kl'][0].mean()
+    noise_scale = 1  # real_data['kl'][0].std()
 
     MF.np.random.seed(random_seed)
-    img = MF.np.random.normal(flux_center,  # load_initial_data['kl'][0].mean(),
-                              noise_scale,  # load_initial_data['kl'][0].std(),
+    img = MF.np.random.normal(flux_center,  # real_data['kl'][0].mean(),
+                              noise_scale,  # real_data['kl'][0].std(),
                               mf.size).reshape(mf.shape)
     img_hpf = MF.utils.high_pass_filter_stamp(img, hpf, 
-                                              NICMOS_shape)  # load_initial_data.loc[0, 'betaPic'].shape)
+                                              NICMOS_shape)  # real_data.loc[0, 'betaPic'].shape)
 
     # Exercise
     mf_result = MF.apply_matched_filter(mf, img_hpf)
@@ -220,21 +220,21 @@ def test_apply_matched_filter_to_random_stamp(hpf, load_initial_data):
 
 @pytest.mark.parametrize('hpf', hpf_index)
 @pytest.mark.skip(reason="Using FFT matched filter, not dot product")
-def test_apply_matched_filter_to_random_stamp_plus_psf(load_initial_data, hpf):
+def test_apply_matched_filter_to_random_stamp_plus_psf(real_data, hpf):
     """
     Apply MF to a klip-subtracted stamp with no PSF injected
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     MF.np.random.seed(random_seed)
-    stamp = MF.np.random.normal(0, #load_initial_data['kl'][0].mean(),
-                                load_initial_data['kl'][0].std(),
+    stamp = MF.np.random.normal(0, #real_data['kl'][0].mean(),
+                                real_data['kl'][0].std(),
                                 mf.size).reshape(mf.shape)
-    flux_scale = 5 * load_initial_data['kl'][0].std()
-    flux = MF.np.nansum(load_initial_data['psf'][0] * flux_scale)
-    stamp = load_initial_data['psf'][0] * flux_scale + stamp
+    flux_scale = 5 * real_data['kl'][0].std()
+    flux = MF.np.nansum(real_data['psf'][0] * flux_scale)
+    stamp = real_data['psf'][0] * flux_scale + stamp
 
     flux_psf = MF.RK.high_pass_filter(stamp, hpf)
 
@@ -257,20 +257,20 @@ def test_apply_matched_filter_to_random_stamp_plus_psf(load_initial_data, hpf):
 
 @pytest.mark.parametrize('hpf', hpf_index)
 #@pytest.mark.skip(reason="Currently fails")
-def test_apply_matched_filter_fft_to_psf_loc(load_initial_data,  hpf):
+def test_apply_matched_filter_fft_to_psf_loc(real_data,  hpf):
     """
     Apply the FFT MF to a PSF model - check that the location is the central pixel
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     flux_scale = 1
-    flux = MF.np.nansum(load_initial_data['psf'][0] * flux_scale)
-    img = MF.utils.high_pass_filter_stamp(load_initial_data.loc[0, 'psf'] * flux_scale,
+    flux = MF.np.nansum(real_data['psf'][0] * flux_scale)
+    img = MF.utils.high_pass_filter_stamp(real_data.loc[0, 'psf'] * flux_scale,
                                           hpf,
-                                          load_initial_data.loc[0, 'betaPic'].shape)
-    #img = MF.RK.high_pass_filter(load_initial_data['psf'][0] * flux_scale, hpf)
+                                          real_data.loc[0, 'betaPic'].shape)
+    #img = MF.RK.high_pass_filter(real_data['psf'][0] * flux_scale, hpf)
 
     # Exercise
     # in this case, you just want the central pixel
@@ -285,20 +285,20 @@ def test_apply_matched_filter_fft_to_psf_loc(load_initial_data,  hpf):
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
-def test_apply_matched_filter_fft_to_psf_flux(load_initial_data, hpf):
+def test_apply_matched_filter_fft_to_psf_flux(real_data, hpf):
     """
     Apply the FFT MF to a PSF model - check that the flux is correct
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     flux_scale = 479.4
-    flux = MF.np.nansum(load_initial_data['psf'][0] * flux_scale)
-    img = MF.utils.high_pass_filter_stamp(load_initial_data.loc[0, 'psf'] * flux_scale,
+    flux = MF.np.nansum(real_data['psf'][0] * flux_scale)
+    img = MF.utils.high_pass_filter_stamp(real_data.loc[0, 'psf'] * flux_scale,
                                           hpf,
-                                          load_initial_data.loc[0, 'betaPic'].shape)
-    #img = MF.RK.high_pass_filter(load_initial_data['psf'][0] * flux_scale, hpf)
+                                          real_data.loc[0, 'betaPic'].shape)
+    #img = MF.RK.high_pass_filter(real_data['psf'][0] * flux_scale, hpf)
 
     # Exercise
     # in this case, you just want the central pixel
@@ -315,21 +315,21 @@ def test_apply_matched_filter_fft_to_psf_flux(load_initial_data, hpf):
 
 @pytest.mark.parametrize('hpf', hpf_index)
 @pytest.mark.skip(reason="Currently fails")
-def test_apply_matched_filter_fft_to_random_stamp(load_initial_data, hpf):
+def test_apply_matched_filter_fft_to_random_stamp(real_data, hpf):
     """
     Apply MF to a klip-subtracted stamp with no PSF injected
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     MF.np.random.seed(random_seed)
-    stamp = MF.np.random.normal(0, #load_initial_data['kl'][0].mean(),
-                                load_initial_data['kl'][0].std(),
+    stamp = MF.np.random.normal(0, #real_data['kl'][0].mean(),
+                                real_data['kl'][0].std(),
                                 mf.size).reshape(mf.shape)
     img = MF.utils.high_pass_filter_stamp(stamp,
                                           hpf,
-                                          load_initial_data.loc[0, 'betaPic'].shape)
+                                          real_data.loc[0, 'betaPic'].shape)
 
     # Exercise
     mf_result = MF.apply_matched_filter_fft(mf, img)
@@ -345,21 +345,21 @@ def test_apply_matched_filter_fft_to_random_stamp(load_initial_data, hpf):
 
 @pytest.mark.parametrize('hpf', hpf_index)
 @pytest.mark.skip(reason="Currently fails")
-def test_apply_matched_filter_fft_to_random_stamp_with_psf(load_initial_data, hpf):
+def test_apply_matched_filter_fft_to_random_stamp_with_psf(real_data, hpf):
     """
     Apply MF to a klip-subtracted stamp with no PSF injected
     """
     # Setup
-    mf_template_psf = load_initial_data['psf'][hpf]
+    mf_template_psf = real_data['psf'][hpf]
     mf = MF.create_matched_filter(mf_template_psf)
 
     MF.np.random.seed(random_seed)
-    stamp = MF.np.random.normal(0, #load_initial_data['kl'][0].mean(),
-                                load_initial_data['kl'][0].std(),
+    stamp = MF.np.random.normal(0, #real_data['kl'][0].mean(),
+                                real_data['kl'][0].std(),
                                 mf.size).reshape(mf.shape)
-    flux_scale = 10 * load_initial_data['kl'][0].std()
-    stamp = load_initial_data.loc[0, 'psf'] * flux_scale + stamp
-    flux = MF.np.nansum(load_initial_data['psf'][0] * flux_scale)
+    flux_scale = 10 * real_data['kl'][0].std()
+    stamp = real_data.loc[0, 'psf'] * flux_scale + stamp
+    flux = MF.np.nansum(real_data['psf'][0] * flux_scale)
     flux_psf = MF.RK.high_pass_filter(stamp, hpf)
 
     # Exercise
@@ -376,21 +376,21 @@ def test_apply_matched_filter_fft_to_random_stamp_with_psf(load_initial_data, hp
 
 @pytest.mark.parametrize('hpf', hpf_index)
 @pytest.mark.skip("Not sure what the best way to test this is, actually")
-def test_high_pass_filter_stamp(load_initial_data, hpf):
+def test_high_pass_filter_stamp(real_data, hpf):
     """
     Make sure that the high pass filter gets filtered correctly
     To do this, check that the padded version gives a similar answer to
     the width-rescaled version?
     """
     # Setup
-    initial_psf = load_initial_data['psf'][0]
+    initial_psf = real_data['psf'][0]
     # reference case - rescale the filter width
-    rescale_hpf = initial_psf.shape[-1]/load_initial_data['hr8799'][0].shape[-1]
+    rescale_hpf = initial_psf.shape[-1]/real_data['hr8799'][0].shape[-1]
     ref_filt = MF.RK.high_pass_filter(initial_psf, hpf * rescale_hpf)
 
     # Exercise
     # test case
-    test_filt = MF.utils.high_pass_filter_stamp(initial_psf, hpf, load_initial_data['hr8799'][0].shape)
+    test_filt = MF.utils.high_pass_filter_stamp(initial_psf, hpf, real_data['hr8799'][0].shape)
 
     # Validate
     # chi^2, the error is estimated as sqrt(original psf)**2 ::shrug::
