@@ -61,7 +61,7 @@ def high_pass_filter_stamp(stamp, filterwidth, target_image_shape):
     return filt_stamp
 
 
-def apply_matched_filter(matched_filter, target):
+def apply_matched_filter_dot(target, matched_filter):
     """
     The matched filter is just a dot product. Inputs can be 2-D or 1-D.
     This is only valid for a single location
@@ -71,15 +71,45 @@ def apply_matched_filter(matched_filter, target):
     Returns:
       single value: the result of the matched filtering
     """
-    return np.dot(matched_filter.ravel(), target.ravel())
+    # make sure to remove nan's from the target
+    return np.inner(utils.flatten_image_axes(utils.denan(target)),
+                    matched_filter.flat)
 
+# legacy compatibility
+apply_matched_filter = apply_matched_filter_dot
+
+def apply_matched_filter_dot_to_image(image, matched_filter, pixel_indices=None):
+    """
+    Apply the dot-product matched filter to an image. You can specify which
+    pixels using pixel_indices - note that these are the *flattened* array
+    coordinates. This works by making a stamp for each pixel in the region
+    of interest.
+    Args:
+      image: 2-D image (the full image, not a region).
+             Possibly in the future this can be flat, and any missing pixels
+             will just be filled in with nan's
+      matched_filter: 2-D matched filter
+      pixel_indices: the (flattened) coordinates pixels you are interested in
+    Returns:
+      mf_image: an image with the same shape as the original image, having had
+                the matched filter applied
+    """
+    cube_of_stamps = utils.get_cube_of_stamps_from_image(image,
+                                                         matched_filter.shape,
+                                                         pixel_indices)
+    #mf_result_flat = np.inner(utils.denan(utils.flatten_image_axes(cube_of_stamps),
+    #                                      matched_filter.flat))
+    mf_result_flat = apply_matched_filter_dot(cube_of_stamps,
+                                              matched_filter)
+    mf_result = utils.make_image_from_region(mf_result_flat, pixel_indices, image.shape)
+    return mf_result
 
 def apply_matched_filter_fft(image, matched_filter):
     """
     Use the scipy signals processing library to use FFT to convolve the PSF with the whole image
     Uses scipy.signals.fftconvolve
     Args:
-      image: the 2-D image you want to apply the MF to
+      image: the 2-D image you want to apply the MF to (note: *must* be 2-D)
       matched_filter: the signal you're looking for
     Returns:
       mf_result: the matched filtered image, with the same shape as the original image
@@ -103,6 +133,8 @@ def apply_matched_filter_fft_to_cube(cube, matched_filter):
     mf_result = np.array(list(map(lambda img: apply_matched_filter_fft(img, matched_filter), cube)))
     mf_result = np.reshape(mf_result, orig_shape)
     return mf_result
+
+
 
 
 
