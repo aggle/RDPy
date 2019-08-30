@@ -304,12 +304,14 @@ def make_image_from_region(region, indices=None, shape=None):
         img: an image (or array of) with dims `shape` and with nan's in 
             whatever indices are not explicitly set
     """
-    oldshape = np.copy(region.shape)
+    oldshape = region.shape[:]
     if shape is None:
+        # assume that you have been given the full square imae
         Npix = oldshape[-1]
         Nside = np.int(np.sqrt(Npix))
         indices = np.array(range(Npix))
         shape = (Nside, Nside)
+        return region.reshape(oldshape[:-1]+shape)
 
     img = np.ravel(np.zeros(shape))*np.nan
     # this is super memory inefficient
