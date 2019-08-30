@@ -14,7 +14,7 @@ hpf_index = [0, 5, 10, 15, 20, 25, 30, 35, 40]
 hpf_index = hpf_index[::3]
 
 # NICMOS properties
-NICMOS_shape = MF.np.array([80, 80])
+NICMOS_imshape = MF.np.array([80, 80])
 
 # helper functions
 def prepare_injection(psf, flux_scale=1, hpf=0):
@@ -30,7 +30,7 @@ def prepare_injection(psf, flux_scale=1, hpf=0):
     """
     scaled_stamp = psf/MF.np.nansum(psf) * flux_scale
     tot_flux = MF.np.nansum(scaled_stamp)
-    processed_psf = MF.utils.high_pass_filter_stamp(scaled_stamp, hpf, NICMOS_shape)
+    processed_psf = MF.utils.high_pass_filter_stamp(scaled_stamp, hpf, NICMOS_imshape)
     return processed_psf, tot_flux
 
 
@@ -69,7 +69,7 @@ def test_real_data():
     psf_loaded = df.loc[hpf, 'psf']
     psf_template = MF.utils.high_pass_filter_stamp(df.loc[0, 'psf'],
                                                    hpf,
-                                                   NICMOS_shape)
+                                                   NICMOS_imshape)
     # Validate
     assert_array_almost_equal(psf_loaded, psf_template, 5, verbose=True)
 
@@ -112,7 +112,7 @@ def test_apply_matched_filter_to_null_psf(real_data, hpf):
     flux_psf = MF.np.zeros_like(mf)
 
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, flux_psf)
+    mf_result = MF.apply_matched_filter_dot(flux_psf, mf)
 
     # Validate
     # check that you get the flux back to 1 part in 100
@@ -132,7 +132,7 @@ def test_apply_matched_filter_to_flat_psf(real_data, hpf):
     flux_psf = MF.np.ones_like(mf)
 
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, flux_psf)
+    mf_result = MF.apply_matched_filter_dot(flux_psf, mf)
 
     # Validate
     # check that you get the flux back to 1 part in 100
@@ -156,7 +156,7 @@ def test_apply_matched_filter_to_psf_template(real_data, hpf):
                                        hpf)
 
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, flux_psf)
+    mf_result = MF.apply_matched_filter_dot(flux_psf, mf)
 
     # Validate
     # check that you get the flux back to 1 part in 100
@@ -178,7 +178,7 @@ def test_apply_matched_filter_to_scaled_psf(real_data, hpf):
                                            flux_scale,
                                            hpf)
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, img)
+    mf_result = MF.apply_matched_filter_dot(img, mf)
 
     # Validate
     # check that you get the flux back to 1 part in 1e3
@@ -206,10 +206,10 @@ def test_apply_matched_filter_to_random_stamp(hpf, real_data):
                               noise_scale,  # real_data['kl'][0].std(),
                               mf.size).reshape(mf.shape)
     img_hpf = MF.utils.high_pass_filter_stamp(img, hpf, 
-                                              NICMOS_shape)  # real_data.loc[0, 'betaPic'].shape)
+                                              NICMOS_imshape)  # real_data.loc[0, 'betaPic'].shape)
 
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, img_hpf)
+    mf_result = MF.apply_matched_filter_dot(img_hpf, mf)
 
     # Validate
     # check that the matched filter is better than half the noise level
@@ -239,7 +239,7 @@ def test_apply_matched_filter_to_random_stamp_plus_psf(real_data, hpf):
     flux_psf = MF.RK.high_pass_filter(stamp, hpf)
 
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, flux_psf)
+    mf_result = MF.apply_matched_filter_dot(flux_psf, mf)
 
     # Validate
     # check that you get get within 10% of the flux for an SNR of >= 5
@@ -363,7 +363,7 @@ def test_apply_matched_filter_fft_to_random_stamp_with_psf(real_data, hpf):
     flux_psf = MF.RK.high_pass_filter(stamp, hpf)
 
     # Exercise
-    mf_result = MF.apply_matched_filter(mf, flux_psf).max()
+    mf_result = MF.apply_matched_filter_dot(mf, flux_psf).max()
 
     # Validate
     # check that you get the flux back to better than 3%
@@ -398,3 +398,5 @@ def test_high_pass_filter_stamp(real_data, hpf):
     assert(diff < 1e-2)
 
     # cleanup - none
+
+
