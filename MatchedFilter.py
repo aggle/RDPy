@@ -104,6 +104,30 @@ def apply_matched_filter_dot_to_image(image, matched_filter, pixel_indices=None)
     mf_result = utils.make_image_from_region(mf_result_flat, pixel_indices, image.shape)
     return mf_result
 
+
+def apply_matched_filter_dot_to_cube(cube, matched_filter, pixel_indices):
+    """
+    Just like apply_matched_filter_dot_to_image,
+    but iterates quickly over a cube
+    Args:
+      cube: N-D cube, where the last 2 axes are the pixel axes. Must be full images
+      matched_filter: 2-D matched filter
+      pixel_indices: the (flattened) coordinates pixels you are interested in
+    Returns:
+      mf_image: an image with the same shape as the original image, having had
+                the matched filter applied
+    """
+    orig_shape = cube.shape
+    cube = utils.flatten_leading_axes(cube, -2)
+    #mf_result = np.array([apply_matched_filter_fft(c, matched_filter) for c in cube])
+    mf_result = np.array(list(map(lambda img: apply_matched_filter_dot_to_image(img,
+                                                                                matched_filter,
+                                                                                pixel_indices),
+                                  cube)))
+    mf_result = np.reshape(mf_result, orig_shape)
+    return mf_result
+
+
 def apply_matched_filter_fft(image, matched_filter):
     """
     Use the scipy signals processing library to use FFT to convolve the PSF with the whole image
@@ -133,7 +157,6 @@ def apply_matched_filter_fft_to_cube(cube, matched_filter):
     mf_result = np.array(list(map(lambda img: apply_matched_filter_fft(img, matched_filter), cube)))
     mf_result = np.reshape(mf_result, orig_shape)
     return mf_result
-
 
 
 
