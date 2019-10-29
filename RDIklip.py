@@ -142,20 +142,16 @@ def klip_subtract_with_basis_slower(img_flat, kl_basis, n_bases=None,
     return np.squeeze(kl_sub.reshape(new_shape))
 
 
+def generate_klip_psf(img_flat, kl_basis, n_bases=None):
+    """
+    Generate the KLIP model of the PSF
+    """
+    pass
+
 def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
     """
-    If you already have the KL basis, do the klip subtraction
-    Arguments:
-      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
-      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
-      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
-          If None, use full basis
-      double_project: apply KL twice (useful for some FMMF cases)
-    Return:
-      kl_sub: array with same shape as input image, after KL PSF subtraction.
-        The KL basis axis is second-to-last (before image pixels)
+    Generate the KLIP model of the PSF
     """
-
     # make sure n_bases is iterable
     if n_bases is None:
         n_bases = np.array([len(kl_basis)])
@@ -204,3 +200,24 @@ def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
     return np.squeeze(kl_sub.reshape(new_shape))
 
 
+"""
+def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
+    If you already have the KL basis, do the klip subtraction
+    Arguments:
+      img_flat: (Nparam x) Npix flattened image - pixel axis must be last
+      kl_basis: (Nbases x ) Nklip x Npix array of KL basis vectors (possibly more than one basis)
+      n_bases [None]: list of integers for Kmax, return one image per Kmax in n_bases.
+          If None, use full basis
+      double_project: apply KL twice (useful for some FMMF cases)
+    Return:
+      kl_sub: array with same shape as input image, after KL PSF subtraction.
+        The KL basis axis is second-to-last (before image pixels)
+    klip_psf = generate_klip_psf(img_flat, kl_basis, n_bases)
+
+    img_flat_mean_sub = img_flat - np.nanmean(img_flat, axis=-1, keepdims=True)
+    # tile the target to match the shape of klip_psf
+    imgs_tiled = np.tile(img_flat_mean_sub[..., None, :],
+                         [1 for i in img_flat_mean_sub.shape[:-1]] + [len(klip_psf), 1])
+    klip_sub = imgs_tiled - klip_psf
+    return klip_sub
+"""

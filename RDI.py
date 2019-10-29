@@ -454,7 +454,8 @@ class ReferenceCube(object):
         argdict['mf_locations'] = kwargs.get('mf_locations', self.matched_filter_locations)
         # set matched_filter_locations
         self.matched_filter_locations = argdict['mf_locations']
-        mf = MF.generate_matched_filter(**argdict) # this calls the module method
+        #mf = MF.generate_matched_filter(**argdict) # this calls the module method
+        mf = MF.create_matched_filter(self.instrument.psf)
         if return_mf is False:
             self.matched_filter = mf
         else:

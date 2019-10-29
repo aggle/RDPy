@@ -36,15 +36,14 @@ class NICMOS(Instrument):
         self.IWAmask = self.make_IWA_mask(self.imshape, self.center, self.IWApix.value)
         self.psf_fwhm = {'F160W': 1.89 * units.pixel}
     # image orientation
-    def orient_nup_eleft(self, img, header):
+    def orient_nup_eleft(self, img, orientat):
         """
         Given a NICMOS image and header, rotate it so you have Nup and Eleft
         Arguments:
           img: 2-D image
-          header: dict-style header with the following keywords:
-            ORIENTAT
+          orientat: ORIENTAT keyword from the NICMOS header
         """
-        rotangle = -header['ORIENTAT']
+        rotangle = -orientat#header['ORIENTAT']
         rotimg = ndimage.rotate(img, rotangle)
         return rotimg
 

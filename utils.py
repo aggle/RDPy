@@ -13,7 +13,7 @@ from scipy import ndimage
 #def rot_mat(angle):
 #    """
 #    Generate a rotation matrix for a given angle in degrees. 
-#    It is designed to operate on images in python and rotate them
+#    It is designed to operate on image coordinates in python and rotate them
 #    such that north is up and east is to the left (i.e. CCW).
 #    Args:
 #        angle: rotation angle in degrees
@@ -85,13 +85,27 @@ def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
     """
     # convert all angles from degrees to radians
     center = np.array(center)
-    pa = pa*np.pi/180
-    ORIENTAT = ORIENTAT*np.pi/180
+    pa = np.radians(pa)
+    ORIENTAT = np.radians(ORIENTAT)
     # rotation and ORIENTAT are defined CCW so need a -1 here
     tot_ang = -1*(pa-ORIENTAT)
     row = sep*np.cos(tot_ang)/pix_scale + center[0]
     col = sep*np.sin(tot_ang)/pix_scale + center[1]
     return (row, col)
+
+
+def orient_alice_image(image, orientat):
+    """
+    Take an image and orient it so north is up and east is left
+    See also: NICMOS.orient_nup_eleft(image, orientat)
+    Args:
+      image: 2-D image
+      orientat: the 'orientat' ALICE header value corresponding to the image
+    Returns:
+      oriented_image: 2-D image with north up, east left. Shape depends on the angle
+    """
+    rot_img = ndimage.rotate(image, -orientat, axes=[-2,-1])
+    return rot_img
 
 
 ##########
@@ -101,16 +115,17 @@ def seppa_2_image(sep, pa, ORIENTAT=0, center=(40,40), pix_scale = 75):
 def get_stamp_coordinates(center, drow, dcol, imshape, nanpad=False):
     """
     get pixel coordinates for a stamp with width dcol, height drow, and center `center` embedded
-    in an image of dimensions imshape
+    in an image of dimensions imshape.
+    don't use this, use get_stamp_from_image or get_stamp_from_cube
     Arguments:
         center: (row, col) center of the stamp
         drow: height of stamp
         dcol: width of stamp
         imshape: total size of image the stamp is a part of
     Returns:
-        img_coords: the stamp indices for the full image array (i.e. stamp = img[img_coords])
+        img_coords: the stamp indices for the full image array (i.e. stamp = img[img_coords[0], img_coords[1]xo])
         stamp_coords: the stamp indices for selecting the part of the stamp
-                      that goes in the image (i.e. stamp[stamp_coords]).
+                      that goes in the image (i.e. stamp[stamp_coords[0], stamp_coords[1]]).
                       this is relevant for stamps on the edge of the images -
                       e.g. if you want to matched filter the image edge, you should
                       plug these coordinates into your matched filter stamp to
@@ -162,15 +177,14 @@ def get_stamp_from_image(image, stamp_shape, coord):
       coord: the flattened coordinate of the pixel of interest
     Returns:
       stamp_cube: a 3-D array of the stamps, in order of the pixel coordinates
-    Args:
     """
-    try:
-        # if the coordinate isn't flat, return None
-        # this is not a smart way to fail
-        assert(isinstance(coord, np.int) is False)
-    except:
-        print("coord ({0}) in get_stamp_from_image needs to be 1-D flattened coordinate".format(coord))
-        return None
+    #try:
+    #    # if the coordinate isn't an integer, return None
+    #    # this is not a smart way to fail
+    #    assert(isinstance(coord, np.int) == True)
+    #except:
+    #    print("coord ({0}) being automatically converted to int") #in get_stamp_from_image needs to be 1-D flattened coordinate".format(coord))
+    #    coord = np.int(coord)
     row, col= np.unravel_index(coord, image.shape)
     img_coord, stamp_coord = get_stamp_coordinates((row, col),
                                                    *stamp_shape,
@@ -186,6 +200,22 @@ def get_stamp_from_image(image, stamp_shape, coord):
         stamp = tmp
     return stamp
 
+def get_stamp_from_cube(cube, stamp_shape, coord):
+    """
+    Pull a stamp out from an image with a given shape centered at
+    a given pixel.
+    Args:
+      cube: 3-D image
+      stamp_shape: the shape of the stamps
+      coord: the flattened coordinate of the pixel of interest
+    Returns:
+      stamp_cube: a 3-D array of the stamps, in order of the pixel coordinates
+    """
+    cube_shape = cube.shape
+    flat_cube = flatten_leading_axes(cube, -2)
+    stamps = [get_stamp_from_image(img, stamp_shape, coord) for img in flat_cube]
+    stamps = np.array(stamps).reshape(list(cube_shape)[:-2] + list(stamp_shape))
+    return stamps
 
 def get_cube_of_stamps_from_image(image, stamp_shape, pixel_coordinates=None):
     """

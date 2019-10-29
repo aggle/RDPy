@@ -47,7 +47,7 @@ def test_get_cube_of_stamps():
     rad = 10
     region_mask = utils.make_circular_mask((40, 40), rad, NICMOS_imshape)
     pixel_indices = utils.np.ravel_multi_index(utils.np.where(region_mask), NICMOS_imshape)
-    stamp_cube = utils.convert_image_to_cube_of_stamps(region_mask, stamp_shape, pixel_indices)
+    stamp_cube = utils.get_cube_of_stamps_from_image(region_mask, stamp_shape, pixel_indices)
     # Validate
     assert(stamp_cube.shape == (len(pixel_indices), stamp_shape[0], stamp_shape[1]))
 
@@ -61,4 +61,14 @@ def test_get_cube_of_stamps():
     # are truly in the center
     assert(utils.np.sum(stamp_cube[cent_stamps]) == len(cent_stamps)*stamp_shape[0]*stamp_shape[1])
     #assert(np.nansum(stamp_cube) == 100)
+    # Cleanup - none
+
+def test_orient_alice_image():
+    # setup
+    image = utils.np.ones((100,100))
+    angle = 90
+    # Exercise
+    rot_img = utils.orient_alice_image(image, orientat=angle)
+    # Validate
+    assert(utils.np.shape(rot_img) == utils.np.shape(image))
     # Cleanup - none

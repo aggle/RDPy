@@ -14,9 +14,50 @@ def calc_matched_filter_throughput(matched_filter):
       throughput: the throughput correction for the matched filter
          correct signal = (matched_filter_result) / throughput
     """
-    throughput = np.linalg.norm(matched_filter)**2
+    orig_shape = matched_filter.shape
+    nan_coords = np.isnan(matched_filter)
+    matched_filter[nan_coords] = 0
+    throughput = np.linalg.norm(utils.flatten_image_axes(matched_filter), axis=-1)**2
+    matched_filter[nan_coords] = np.nan
     return throughput
 
+def calc_matched_filter_throughput_klip(matched_filter, locations, kl_basis, num_basis, return_stamps=False):
+    """
+    Calculate the KLIP-corrected matched filter throughput
+    Args:
+      matched_filter: the matched filter stamp
+      locations: Npix x 2 array of (row, col) locations you care about
+      kl_basis: the full-image KLIP basis as [N_k, Nrow, Ncol] i.e. not raveled)
+      num_basis: array of the number of bases
+      return_stamp [False]: if True, return the KL-subtracted matched filters for debugging
+    Returns:
+      N_locations array of throughput corrections
+    """
+    # first, get rid of nans in the KL basis
+    kl_basis[np.isnan(kl_basis)] = 0
+    stamp_shape = matched_filter.shape
+    img_shape = kl_basis.shape[-2:]
+    mf_klsub = np.zeros((len(locations), len(num_basis), stamp_shape[0]*stamp_shape[1]),
+                        dtype=np.float)
+    for i, loc in enumerate(locations):
+        if (i+1)%400 == 0:
+            print(f"{i+1} throughputs of f{len(locations)} completed")
+        # pull out the KL basis stamp
+        loc_ravel = np.int(np.ravel_multi_index(loc, img_shape))
+        _, stamp_coords = utils.get_stamp_coordinates(loc, stamp_shape[0], stamp_shape[1], img_shape)
+        klip_stamp = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
+        # do klip subtraction with the stamp
+        klsub_result = RK.klip_subtract_with_basis(matched_filter.ravel(),
+                                                  utils.flatten_image_axes(klip_stamp),
+                                                  num_basis)
+        mf_klsub[i] = klsub_result
+
+    # return KL-subtracted stamp for debugging
+    if return_stamps == True:
+        return mf_klsub
+    throughput = calc_matched_filter_throughput(utils.make_image_from_region(mf_klsub))
+
+    return throughput
 
 def create_matched_filter(template):
     """
@@ -25,7 +66,7 @@ def create_matched_filter(template):
     """
     matched_filter = template - np.nanmean(template)
     throughput = calc_matched_filter_throughput(matched_filter)
-    matched_filter = matched_filter/throughput
+    #matched_filter = matched_filter/throughput
     return matched_filter
 
 
@@ -157,7 +198,6 @@ def apply_matched_filter_fft_to_cube(cube, matched_filter):
     mf_result = np.array(list(map(lambda img: apply_matched_filter_fft(img, matched_filter), cube)))
     mf_result = np.reshape(mf_result, orig_shape)
     return mf_result
-
 
 
 
