@@ -46,6 +46,8 @@ def calc_matched_filter_throughput_klip(matched_filter, locations, kl_basis, num
         loc_ravel = np.int(np.ravel_multi_index(loc, img_shape))
         _, stamp_coords = utils.get_stamp_coordinates(loc, stamp_shape[0], stamp_shape[1], img_shape)
         klip_stamp = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
+        # get rid of nan's for edge stamps
+        klip_stamp[np.isnan(klip_stamp)] = 0
         # do klip subtraction with the stamp
         klsub_result = RK.klip_subtract_with_basis(matched_filter.ravel(),
                                                   utils.flatten_image_axes(klip_stamp),
