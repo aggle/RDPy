@@ -77,9 +77,29 @@ def test_real_data():
     del df
 
 
-def test_calc_matched_filter_throughput():
+@pytest.mark.parametrize('hpf', hpf_index)
+def test_calc_matched_filter_throughput(real_data, hpf):
     """
-    No idea how to test this
+    A properly normalized matched filter should give a flux of 1 when dotted with itself
+    """
+    # Setup
+    mf_template_psf = real_data['psf'][hpf]
+    mf = MF.create_matched_filter(mf_template_psf)
+    flux_psf = mf.copy()
+
+    # Exercise
+    throughput = MF.calc_matched_filter_throughput(mf)
+    mf_result_dot = MF.apply_matched_filter_dot(flux_psf, mf)
+    mf_result_fft = MF.apply_matched_filter_fft(flux_psf, mf).max()
+    # Validate
+    assert_almost_equal(mf_result_dot/throughput, 1, 5)
+    assert_almost_equal(mf_result_fft/throughput, 1, 2)
+    # Cleanup - none needed
+
+
+def test_calc_matched_filter_throughput_klip():
+    """
+    This is harder to test
     """
     pass
 
