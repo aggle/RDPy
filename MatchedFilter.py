@@ -3,6 +3,7 @@ import pandas as pd
 from scipy import signal
 from . import RDIklip as RK
 from . import utils
+from . import NICMOS
 
 
 def calc_matched_filter_throughput(matched_filter):
@@ -21,13 +22,17 @@ def calc_matched_filter_throughput(matched_filter):
     matched_filter[nan_coords] = np.nan
     return throughput
 
-def calc_matched_filter_throughput_klip(matched_filter, locations, kl_basis, num_basis, return_stamps=False):
+def calc_matched_filter_throughput_klip(matched_filter,
+                                        locations,
+                                        kl_basis,
+                                        num_basis,
+                                        return_stamps=False):
     """
     Calculate the KLIP-corrected matched filter throughput
     Args:
       matched_filter: the matched filter stamp
       locations: Npix x 2 array of (row, col) locations you care about
-      kl_basis: the full-image KLIP basis as [N_k, Nrow, Ncol] i.e. not raveled)
+      kl_basis: the full-image KLIP basis as [N_k, Nrow, Ncol] i.e. not raveled, not just a region)
       num_basis: array of the number of bases
       return_stamp [False]: if True, return the KL-subtracted matched filters for debugging
     Returns:
@@ -45,20 +50,27 @@ def calc_matched_filter_throughput_klip(matched_filter, locations, kl_basis, num
         # pull out the KL basis stamp
         loc_ravel = np.int(np.ravel_multi_index(loc, img_shape))
         _, stamp_coords = utils.get_stamp_coordinates(loc, stamp_shape[0], stamp_shape[1], img_shape)
-        klip_stamp = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
+        #klip_stamp = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
         # get rid of nan's for edge stamps
-        klip_stamp[np.isnan(klip_stamp)] = 0
+        #klip_stamp[np.isnan(klip_stamp)] = 0
+        mf_image = utils.inject_psf(np.zeros(kl_basis.shape[-2:]),
+                                    psf = matched_filter + matched_filter.min(),
+                                    center = loc,
+                                    subtract_mean = True)
         # do klip subtraction with the stamp
-        klsub_result = RK.klip_subtract_with_basis(matched_filter.ravel(),
-                                                  utils.flatten_image_axes(klip_stamp),
-                                                  num_basis)
-        mf_klsub[i] = klsub_result
+        klsub_result = RK.klip_subtract_with_basis(mf_image.ravel(), #matched_filter.ravel(),
+                                                   utils.flatten_image_axes(kl_basis),#klip_stamp),
+                                                   num_basis)
+        # now pull out stamps around the filter
+        mf_klsub_stamp = utils.get_stamp_from_cube(utils.make_image_from_region(klsub_result),
+                                                   stamp_shape, loc_ravel)
+        mf_klsub[i] = utils.flatten_image_axes(mf_klsub_stamp)
 
     # return KL-subtracted stamp for debugging
     if return_stamps == True:
         return mf_klsub
-    throughput = calc_matched_filter_throughput(utils.make_image_from_region(mf_klsub))
 
+    throughput = calc_matched_filter_throughput(utils.make_image_from_region(mf_klsub))
     return throughput
 
 def create_matched_filter(template):
@@ -181,7 +193,7 @@ def apply_matched_filter_fft(image, matched_filter):
     Returns:
       mf_result: the matched filtered image, with the same shape as the original image
     """
-    mf_result = signal.fftconvolve(image, matched_filter, mode='same')
+    mf_result = signal.fftconvolve(image, matched_filter, mode='same', axes=(-1, -2))
     return mf_result
 
 def apply_matched_filter_fft_to_cube(cube, matched_filter):
