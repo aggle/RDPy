@@ -25,8 +25,7 @@ def calc_matched_filter_throughput(matched_filter):
 def calc_matched_filter_throughput_klip(matched_filter,
                                         locations,
                                         kl_basis,
-                                        num_basis,
-                                        return_stamps=False):
+                                        num_basis=None):
     """
     Calculate the KLIP-corrected matched filter throughput
     Args:
@@ -34,44 +33,40 @@ def calc_matched_filter_throughput_klip(matched_filter,
       locations: Npix x 2 array of (row, col) locations you care about
       kl_basis: the full-image KLIP basis as [N_k, Nrow, Ncol] i.e. not raveled, not just a region)
       num_basis: array of the number of bases
-      return_stamp [False]: if True, return the KL-subtracted matched filters for debugging
     Returns:
       N_locations array of throughput corrections
     """
-    # first, get rid of nans in the KL basis
-    kl_basis[np.isnan(kl_basis)] = 0
-    stamp_shape = matched_filter.shape
+    # make sure locations is 2d
+    while np.ndim(locations) < 2:
+        # works even if locations is just an integer
+        locations = np.expand_dims(locations, 0)
+    if num_basis is None:
+        num_basis = np.array([len(kl_basis)])
     img_shape = kl_basis.shape[-2:]
-    mf_klsub = np.zeros((len(locations), len(num_basis), stamp_shape[0]*stamp_shape[1]),
-                        dtype=np.float)
+    # get rid of nans in the KL basis
+    kl_basis[np.isnan(kl_basis)] = 0
+
+    # shape the matched filter stamps
+    mf_tiled = np.tile(matched_filter, [kl_basis.shape[0]] + [1, 1])
+    stamp_shape = matched_filter.shape
+    # prepare the array that holds the results
+    throughput = np.zeros((len(locations), np.size(num_basis)))#, stamp_shape[0]*stamp_shape[1]),
+    #                    dtype=np.float)
     for i, loc in enumerate(locations):
         if (i+1)%400 == 0:
             print(f"{i+1} throughputs of f{len(locations)} completed")
         # pull out the KL basis stamp
         loc_ravel = np.int(np.ravel_multi_index(loc, img_shape))
-        _, stamp_coords = utils.get_stamp_coordinates(loc, stamp_shape[0], stamp_shape[1], img_shape)
-        #klip_stamp = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
+        klip_stamps = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
         # get rid of nan's for edge stamps
-        #klip_stamp[np.isnan(klip_stamp)] = 0
-        mf_image = utils.inject_psf(np.zeros(kl_basis.shape[-2:]),
-                                    psf = matched_filter + matched_filter.min(),
-                                    center = loc,
-                                    subtract_mean = True)
-        # do klip subtraction with the stamp
-        klsub_result = RK.klip_subtract_with_basis(mf_image.ravel(), #matched_filter.ravel(),
-                                                   utils.flatten_image_axes(kl_basis),#klip_stamp),
-                                                   num_basis)
-        # now pull out stamps around the filter
-        mf_klsub_stamp = utils.get_stamp_from_cube(utils.make_image_from_region(klsub_result),
-                                                   stamp_shape, loc_ravel)
-        mf_klsub[i] = utils.flatten_image_axes(mf_klsub_stamp)
+        klip_stamps[np.isnan(klip_stamps)] = 0
 
-    # return KL-subtracted stamp for debugging
-    if return_stamps == True:
-        return mf_klsub
-
-    throughput = calc_matched_filter_throughput(utils.make_image_from_region(mf_klsub))
-    return throughput
+        # compute the throughput for each K_klip in num_basis
+        mf_norm = np.linalg.norm(matched_filter)**2
+        coeffs = np.array([np.dot(i.flat, j.flat)**2 for i, j in zip(mf_tiled, klip_stamps)])
+        throughput_i = mf_norm - np.cumsum(coeffs)[num_basis-1]
+        throughput[i] = throughput_i
+    return np.squeeze(throughput)
 
 def create_matched_filter(template):
     """
@@ -188,11 +183,14 @@ def apply_matched_filter_fft(image, matched_filter):
     Use the scipy signals processing library to use FFT to convolve the PSF with the whole image
     Uses scipy.signals.fftconvolve
     Args:
-      image: the 2-D image you want to apply the MF to (note: *must* be 2-D)
-      matched_filter: the signal you're looking for
+      image: image or cube you want to apply the MF to, last two axes must be (Nx, Ny)
+      matched_filter: 2-D image of the signal you're looking for
     Returns:
       mf_result: the matched filtered image, with the same shape as the original image
     """
+    # if the image is a cube, then expand the matched filter until the dimensionality matches
+    while np.ndim(image) > np.ndim(matched_filter):
+        matched_filter = matched_filter[None, :]
     mf_result = signal.fftconvolve(image, matched_filter, mode='same', axes=(-1, -2))
     return mf_result
 

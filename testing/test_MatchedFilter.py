@@ -96,12 +96,53 @@ def test_calc_matched_filter_throughput(real_data, hpf):
     assert_almost_equal(mf_result_fft/throughput, 1, 2)
     # Cleanup - none needed
 
+@pytest.mark.parametrize('hpf', hpf_index)
+def test_calc_matched_filter_throughput_klip(real_data, hpf):
+    """
+    Inject some PSFs into an image of zeros, do KLIP subtraction, do
+    matched filtering, calculate the MF correction, and then check that the flux is correct
+    """
+    # Setup
+    mf_template_psf = real_data.loc[hpf, 'psf']
+    mf = MF.create_matched_filter(mf_template_psf)
+    flux_psf = real_data.loc[0, 'psf']#mf_template_psf - mf_template_psf.min()
+    flux_psf -= flux_psf.min()
+    flux_psf /= flux_psf.sum() # total flux is 1
+    NICMOS = MF.NICMOS.NICMOS()
+    loc = MF.np.array([50, 50]) # should test a variety of locations
+    loc_ravel = MF.np.int(MF.np.ravel_multi_index(loc, NICMOS.imshape))
 
-def test_calc_matched_filter_throughput_klip():
-    """
-    This is harder to test
-    """
-    pass
+    # KLIP-subtract the PSF
+    kl_basis = real_data.loc[hpf, 'kl']
+    kl_std = MF.np.nanmean(MF.np.nanstd(kl_basis, axis=1))
+    flux = 0.01 * kl_std
+
+    targ_image = MF.utils.inject_psf(MF.np.zeros(NICMOS.imshape),
+                                     flux_psf,
+                                     loc,
+                                     scale_flux=flux,
+                                     subtract_mean=False,
+                                     return_flat=False,
+                                     hpf=hpf)
+    # KLIP-subtract the injected image with the whole basis
+    klsub_result = MF.RK.klip_subtract_with_basis(MF.utils.flatten_image_axes(targ_image), kl_basis)
+    klsub_stamp = MF.utils.get_stamp_from_image(MF.utils.make_image_from_region(klsub_result),
+                                                mf.shape, loc_ravel)
+    # apply matched filter to stamp
+    #mf_flux_unnormalized = MF.np.dot(mf.flat, klsub_stamp.flat)
+    psf_rad = MF.np.floor(MF.np.array(MF.np.shape(mf))/2).astype(MF.np.int)
+    mf_flux_unnormalized = MF.apply_matched_filter_fft(klsub_stamp, mf)[psf_rad[0], psf_rad[1]]
+    print(mf_flux_unnormalized.shape)
+    # Exercise
+    throughput = MF.calc_matched_filter_throughput_klip(mf,
+                                                        loc,
+                                                        MF.utils.make_image_from_region(real_data.loc[hpf, 'kl']))
+
+    mf_flux = mf_flux_unnormalized/throughput
+    # Validate - within 5% of correct flux
+    assert(MF.np.abs(1 - mf_flux/flux) < 0.05)
+    # Cleanup - none
+    del klsub_result
 
 
 @pytest.mark.parametrize('hpf', hpf_index)
