@@ -116,7 +116,7 @@ def get_stamp_coordinates(center, drow, dcol, imshape, nanpad=False):
     """
     get pixel coordinates for a stamp with width dcol, height drow, and center `center` embedded
     in an image of dimensions imshape.
-    don't use this, use get_stamp_from_image or get_stamp_from_cube
+    This is a helper function - use get_stamp_from_image or get_stamp_from_cube
     Arguments:
         center: (row, col) center of the stamp
         drow: height of stamp
@@ -205,16 +205,21 @@ def get_stamp_from_cube(cube, stamp_shape, coord):
     Pull a stamp out from an image with a given shape centered at
     a given pixel.
     Args:
-      cube: 3-D image
+      cube: 3-D image (or a 2-D image)
       stamp_shape: the shape of the stamps
       coord: the flattened coordinate of the pixel of interest
     Returns:
-      stamp_cube: a 3-D array of the stamps, in order of the pixel coordinates
+      stamp_cube: a 2- or 3-D array of the stamps, in order of the pixel coordinates.
+                  2-D for the case of just an image, and just one coordinate
     """
-    cube_shape = cube.shape
-    flat_cube = flatten_leading_axes(cube, -2)
-    stamps = [get_stamp_from_image(img, stamp_shape, coord) for img in flat_cube]
-    stamps = np.array(stamps).reshape(list(cube_shape)[:-2] + list(stamp_shape))
+    if np.ndim(cube) == 2:
+        # handle the case of just one image
+        stamps = get_stamp_from_image(cube, stamp_shape, coord)
+    else:
+        cube_shape = cube.shape
+        flat_cube = flatten_leading_axes(cube, -2)
+        stamps = [get_stamp_from_image(img, stamp_shape, coord) for img in flat_cube]
+        stamps = np.array(stamps).reshape(list(cube_shape)[:-2] + list(stamp_shape))
     return stamps
 
 def get_cube_of_stamps_from_image(image, stamp_shape, pixel_coordinates=None):
@@ -321,12 +326,12 @@ def flatten_leading_axes(array, axis=-1):
     return np.reshape(array, newshape)
 
 
-def make_image_from_region(region, indices=None, shape=None):
+def make_image_from_flat(flat, indices=None, shape=None):
     """
     put the flattened region back into an image. if no indices or shape are specified, assumes that
-    the region of N pixels is a square with Nx = Ny = sqrt(N)
+    the region of N pixels is a square with Nx = Ny = sqrt(N). Only operates on the last axis.
     Input:
-        region: [Ni,[Nj,[Nk...]]] x Npix array (any shape as long as the last dim is the pixels)
+        flat: [Ni,[Nj,[Nk...]]] x Npix array (any shape as long as the last dim is the pixels)
         indices: [None] Npix array of flattened pixel coordinates 
                  corresponding to the region
         shape: [None] image shape
@@ -334,31 +339,32 @@ def make_image_from_region(region, indices=None, shape=None):
         img: an image (or array of) with dims `shape` and with nan's in 
             whatever indices are not explicitly set
     """
-    oldshape = region.shape[:]
+    oldshape = flat.shape[:]
     if shape is None:
         # assume that you have been given the full square imae
         Npix = oldshape[-1]
         Nside = np.int(np.sqrt(Npix))
         indices = np.array(range(Npix))
         shape = (Nside, Nside)
-        return region.reshape(oldshape[:-1]+shape)
+        return flat.reshape(oldshape[:-1]+shape)
 
     img = np.ravel(np.zeros(shape))*np.nan
     # this is super memory inefficient
     # handle the case of region being a 2D array by extending the img axes
-    if region.ndim > 1:
+    if flat.ndim > 1:
         # assume last dimension is the pixel
-        region = np.reshape(region, (reduce(lambda x,y: x*y, oldshape[:-1]), oldshape[-1]))
-        img = np.tile(img, (region.shape[0], 1))
+        flat = np.reshape(flat, (reduce(lambda x,y: x*y, oldshape[:-1]), oldshape[-1]))
+        img = np.tile(img, (flat.shape[0], 1))
     else:
         img = img[None,:]
     # fill in the image
-    img[:,indices] = region
+    img[:,indices] = flat
     # reshape and get rid of extra axes, if any
     img = np.squeeze(img.reshape(list(oldshape[:-1])+list(shape)))
 
     return img
-
+# for backwards compatibility
+make_image_from_region = make_image_from_flat
 
 
 

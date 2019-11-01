@@ -72,3 +72,23 @@ def test_orient_alice_image():
     # Validate
     assert(utils.np.shape(rot_img) == utils.np.shape(image))
     # Cleanup - none
+
+def test_inject_psf():
+    """
+    test that when you inject a psf into an image it has the expected properties
+    """
+    # setup
+    psf = utils.np.array([[1.]])
+    img = utils.np.zeros((11,11))
+    loc = utils.np.array([5,5])
+    flux = 10.
+    # exercise
+    injected_img = utils.inject_psf(img, psf, loc, scale_flux=flux,
+                                    subtract_mean=False,
+                                    return_flat=False,
+                                    hpf=None)
+    # validate
+    assert(injected_img[loc[0], loc[1]] == flux)
+    assert(utils.np.sum(injected_img) == flux)
+    # cleanup - none
+
