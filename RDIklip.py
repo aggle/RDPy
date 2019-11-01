@@ -146,11 +146,57 @@ def generate_klip_psf(img_flat, kl_basis, n_bases=None):
     """
     Generate the KLIP model of the PSF
     """
-    pass
+    # make sure n_bases is iterable
+    if n_bases is None:
+        n_bases = np.array([len(kl_basis)])
+    elif hasattr(n_bases, '__getitem__') is False:
+        n_bases = np.array([n_bases])
+    else:  # explicitly cast to array
+        n_bases = np.array(n_bases)
+    # make sure the upper bound on n_bases is legal
+    # also, this applies the -1 shift needed for proper indexing
+    tot_basis = len(kl_basis)-1
+    n_bases = np.clip(n_bases - 1, 0, tot_basis-1)
+
+    # reshape input
+    # math assumes img_flat has 2 dimensions, with the last dimension being
+    # the image pixels
+    leading_shape = img_flat.shape[:-1]
+    if img_flat.ndim == 1:
+        # add an empty axis to the front
+        img_flat = np.expand_dims(img_flat, 0)
+        flat_shape = img_flat.shape
+    elif img_flat.ndim > 2:
+        flat_shape = (reduce(lambda x, y: x*y, img_flat.shape[:-1]),
+                      img_flat.shape[-1])
+    else:
+        flat_shape = img_flat.shape
+    # orig_shape = np.copy(img_flat.shape)
+    img_flat = img_flat.reshape(flat_shape)
+
+    kl_basis = np.asarray(kl_basis)
+    img_flat_mean_sub = img_flat - np.nanmean(img_flat, axis=-1, keepdims=True)
+
+    # CAREFUL! tiling depends on dimensionality of img_flat_mean_sub
+    imgs_tiled = np.tile(img_flat_mean_sub[..., None, :],
+                         [1 for i in img_flat_mean_sub.shape[:-1]] + [len(kl_basis), 1])
+    # the following line is what takes up most of the time
+    #coeffs = np.dot(imgs_tiled, kl_basis.T)
+    coeffs = np.inner(imgs_tiled, kl_basis)
+    lower_tri = np.tril(np.ones((kl_basis.shape[0], kl_basis.shape[0])))
+    coeffs = coeffs * lower_tri
+    klip_psf = np.dot(coeffs[..., n_bases, :], kl_basis)
+    return klip_psf
 
 def klip_subtract_with_basis(img_flat, kl_basis, n_bases=None):
     """
-    Generate the KLIP model of the PSF
+    Perform klip subtraction
+    Args:
+      img_flat: N-dimensional (can be 0) array of images where the pixel axis has been flattened
+      kl_basis: 2-D KLIP basis where the pixel axis has been flattened
+      n_bases: integer or array of Kklips. If None, use full basis
+    Returns:
+      kl_sub: KLIP-subtracted images with the KLIP axis in front of the original image shape
     """
     # make sure n_bases is iterable
     if n_bases is None:
