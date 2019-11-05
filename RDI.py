@@ -62,6 +62,7 @@ class ReferenceCube(object):
         # matched filter
         self.matched_filter = None
         self.matched_filter_locations = None
+        self.mf_throughput = None
 
     ###############################
     # Instantiate required fields #
@@ -275,11 +276,9 @@ class ReferenceCube(object):
     @matched_filter.setter
     def matched_filter(self, newval):
         self._matched_filter = newval
-        # if we have a matched filter, AND it's for every pixel, initialize the indices
+        # if we have a matched filter, initialize the indices unles told otherwise
         if self.matched_filter is not None:
-            shape = self.matched_filter.shape
-            if shape[0] == reduce(lambda x,y: x*y, shape[1:]): # works if mf is already flattened
-                self.matched_filter_locations = np.arange(self.matched_filter.shape[0])
+            self.matched_filter_locations = np.array(np.unravel_index(self.flat_region_ind, self.imshape)).T
     @property
     def matched_filter_locations(self):
         """
@@ -294,7 +293,14 @@ class ReferenceCube(object):
         elif newval is None and self.matched_filter is None:
             newval = np.arange(self.npix_region)
         self._matched_filter_locations = newval
-        
+
+    @property
+    def mf_throughput(self):
+        return self._mf_throughput
+    @mf_throughput.setter
+    def mf_throughput(self, newval=None):
+        self._mf_throughput = newval
+
         
     # Mask
     def set_mask(self, mask):
@@ -428,13 +434,15 @@ class ReferenceCube(object):
         return new_basis
 
     #@classmethod
-    def generate_matched_filter(self, return_mf=False, no_kl=True, **kwargs):
+    def generate_matched_filter(self, return_mf=False, no_kl=True, throughput=False, **kwargs):
         """
-        This is a wrapper for RDI.generate_matched_filter that defaults to the
-        reference cube properties as arguments
+        This is a wrapper for MF.create_matched_filter that defaults to the
+        reference cube object as arguments
         Default behavior: returns nothing: sets self.matched_filter
         If return_mf is True, then returns matched filter
-        For more help, see MatchedFilter.generate_matched_filter()
+        For more help, see MatchedFilter.create_matched_filter()
+        if throughput is Ttrue and KL modes have been generated, calculates the MF throughput
+          correction factor for every location in the images
         """
         argdict = {}
         argdict['psf'] = kwargs.get('psf', self.instrument.psf)
@@ -456,10 +464,32 @@ class ReferenceCube(object):
         self.matched_filter_locations = argdict['mf_locations']
         #mf = MF.generate_matched_filter(**argdict) # this calls the module method
         mf = MF.create_matched_filter(self.instrument.psf)
-        if return_mf is False:
-            self.matched_filter = mf
+        self.matched_filter = mf
+
+        if throughput == True:
+            klip=False
+            if hasattr(self, 'kl_basis'):
+                klip=True
+            throughput= self.calculate_matched_filter_throughput(klip=klip)
+
+        if return_mf == False:
+            return
+        return mf
+
+    def calculate_matched_filter_throughput(self, klip=False):
+        """
+        Calls MF.calc_matched_filter_throughput[_klip] depending on if klip is True or False.
+        Sets self.throughput either as a number (klip=False) or an Nbasis x Nx x Ny array (klip=True)
+        No return valuess
+        """
+        if klip is True:
+            self.mf_throughput = MF.calc_matched_filter_throughput_klip(self.matched_filter,
+                                                                        self.matched_filter_locations,
+                                                                        utils.make_image_from_flat(self.kl_basis, self.imshape),
+                                                                        self.n_basis)
         else:
-            return mf
+            self.mf_throughput = MF.calc_matched_filter_throughput(self.matched_filter)
+        
 
     @classmethod
     def apply_matched_filter_to_image(self, image, **kwargs):
