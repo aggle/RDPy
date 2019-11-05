@@ -444,7 +444,7 @@ def inject_psf(img, psf, center, scale_flux=None, subtract_mean=False, return_fl
         img: 2-D img or 3-D cube. Last two dimensions define an img (i.e. [(Nimg,)Nx,Ny])
         psf: 2-D img or 3-D cube, smaller than or equal to img in size. If cube, 
              must have same 1st dimension as img 
-        center: center of the injection in the image (can be more than one location)
+        center: center (row, col) of the injection in the image (can be more than one location)
         scale_flux: multiply the PSF by this number. If this is an array,
              img and psf will be tiled to match its length
              if scale_flux is None, don't scale psf

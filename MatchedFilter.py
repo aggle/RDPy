@@ -34,7 +34,7 @@ def calc_matched_filter_throughput_klip(matched_filter,
       kl_basis: the full-image KLIP basis as [N_k, Nrow, Ncol] i.e. not raveled, not just a region)
       num_basis: array of the number of bases
     Returns:
-      N_locations array of throughput corrections
+      num_basis x N_locations array of throughput corrections
     """
     # make sure locations is 2d
     while np.ndim(locations) < 2:
@@ -54,7 +54,7 @@ def calc_matched_filter_throughput_klip(matched_filter,
     #                    dtype=np.float)
     for i, loc in enumerate(locations):
         if (i+1)%400 == 0:
-            print(f"{i+1} throughputs of f{len(locations)} completed")
+            print(f"{i+1} throughputs of {len(locations)} completed")
         # pull out the KL basis stamp
         loc_ravel = np.int(np.ravel_multi_index(loc, img_shape))
         klip_stamps = utils.get_stamp_from_cube(kl_basis, stamp_shape, loc_ravel)
@@ -66,7 +66,7 @@ def calc_matched_filter_throughput_klip(matched_filter,
         coeffs = np.array([np.dot(i.flat, j.flat)**2 for i, j in zip(mf_tiled, klip_stamps)])
         throughput_i = mf_norm - np.cumsum(coeffs)[num_basis-1]
         throughput[i] = throughput_i
-    return np.squeeze(throughput)
+    return np.squeeze(throughput.T)
 
 def create_matched_filter(template):
     """
