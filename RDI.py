@@ -130,8 +130,8 @@ class ReferenceCube(object):
         # 2. update the cube order
         try:
             self.target_region = self._target[self.flat_region_ind]
-            new_cube_order = calc_refcube_mse(self._target_region,#[self.flat_region_ind],
-                                              self.flat_cube[:, self.flat_region_ind])#utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
+            new_cube_order = sort_squared_distance(self._target_region,#[self.flat_region_ind],
+                                                   self.flat_cube[:, self.flat_region_ind])#utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
         except AttributeError:
             self.target_region = self.target[:]
             new_cube_order = sort_squared_distance(self._target, self.cube)
@@ -264,7 +264,7 @@ class ReferenceCube(object):
         try:
             # automatically pick out the relevant region
             self.kl_basis_region = self.kl_basis[:, self.flat_region_ind]
-        except TypeError:
+        except:
             # this happens when kl_basis hasn't been assigned yet
             pass
         
@@ -497,7 +497,9 @@ class ReferenceCube(object):
         if klip is True:
             self.mf_throughput = MF.calc_matched_filter_throughput_klip(self.matched_filter,
                                                                         self.matched_filter_locations,
-                                                                        utils.make_image_from_flat(self.kl_basis, self.imshape),
+                                                                        utils.make_image_from_flat(self.kl_basis,
+                                                                                                   indices=self.flat_region_ind,
+                                                                                                   shape=self.imshape),
                                                                         self.n_basis)
         else:
             self.mf_throughput = MF.calc_matched_filter_throughput(self.matched_filter)
