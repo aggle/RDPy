@@ -42,6 +42,7 @@ def calc_matched_filter_throughput_klip(matched_filter,
         locations = np.expand_dims(locations, 0)
     if num_basis is None:
         num_basis = np.array([len(kl_basis)])
+    num_basis = np.array(num_basis) # cast this explicitly
     img_shape = kl_basis.shape[-2:]
     # get rid of nans in the KL basis
     kl_basis[np.isnan(kl_basis)] = 0
@@ -52,6 +53,7 @@ def calc_matched_filter_throughput_klip(matched_filter,
     # prepare the array that holds the results
     throughput = np.zeros((len(locations), np.size(num_basis)))#, stamp_shape[0]*stamp_shape[1]),
     #                    dtype=np.float)
+    mf_norm = np.linalg.norm(matched_filter)**2
     for i, loc in enumerate(locations):
         if (i+1)%400 == 0:
             print(f"{i+1} throughputs of {len(locations)} completed")
@@ -62,7 +64,6 @@ def calc_matched_filter_throughput_klip(matched_filter,
         klip_stamps[np.isnan(klip_stamps)] = 0
 
         # compute the throughput for each K_klip in num_basis
-        mf_norm = np.linalg.norm(matched_filter)**2
         coeffs = np.array([np.dot(i.flat, j.flat)**2 for i, j in zip(mf_tiled, klip_stamps)])
         throughput_i = mf_norm - np.cumsum(coeffs)[num_basis-1]
         throughput[i] = throughput_i

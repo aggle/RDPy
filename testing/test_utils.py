@@ -38,6 +38,20 @@ def real_data():
     #print(type(data_df))
     return(data_df)
 
+def test_get_correct_stamp_indices():
+    # Setup
+    stamp_shape = (3, 3)
+    cube = utils.np.arange(400).reshape(4, 10, 10)
+    imshape = cube.shape[-2:]
+    test_index = utils.np.array([0, 0])
+    loc_ravel = utils.np.ravel_multi_index(test_index, imshape)
+    # Exercise
+    stamps = utils.get_stamp_from_cube(cube, stamp_shape, loc_ravel)
+    stamp_sum = utils.np.nansum(stamps, axis=(-1, -2)).astype(utils.np.int)
+    # Validate
+    answer = 22 + 400*utils.np.arange(4)
+    utils.np.testing.assert_array_equal(answer, stamp_sum)
+    # cleanup - none
 
 def test_get_cube_of_stamps():
     # Setup

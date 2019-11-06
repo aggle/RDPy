@@ -212,15 +212,33 @@ def get_stamp_from_cube(cube, stamp_shape, coord):
       stamp_cube: a 2- or 3-D array of the stamps, in order of the pixel coordinates.
                   2-D for the case of just an image, and just one coordinate
     """
+    cube_shape = cube.shape
     if np.ndim(cube) == 2:
         # handle the case of just one image
         stamps = get_stamp_from_image(cube, stamp_shape, coord)
+        return stamps
+    elif np.ndim(cube) > 3:
+        cube = flatten_leading_axes(cube, -2)
     else:
-        cube_shape = cube.shape
-        flat_cube = flatten_leading_axes(cube, -2)
-        stamps = [get_stamp_from_image(img, stamp_shape, coord) for img in flat_cube]
-        stamps = np.array(stamps).reshape(list(cube_shape)[:-2] + list(stamp_shape))
-    return stamps
+        pass
+    # once you're sure the cube is 3-D, just flatten the images and index them
+    cube_flat = flatten_image_axes(cube)
+    row, col = np.unravel_index(coord, cube_shape[-2:])
+    img_coord, stamp_coord = get_stamp_coordinates((row, col),
+                                                   *stamp_shape,
+                                                   cube_shape[-2:])
+    img_coord_flat = np.ravel_multi_index(img_coord, cube_shape[-2:])
+    stamp_coord_flat = np.ravel_multi_index(stamp_coord, stamp_shape)
+    stamp = cube_flat[:, img_coord_flat].copy()
+    # if the actual stamp's shape is not the same as the input stamp shape,
+    # it's an edge stamp. In this case, pad the edges with nan
+    if stamp.shape[-2:] != stamp_shape:
+        tmp = np.zeros(list(cube.shape[:-2]) + list(stamp_shape)) * np.nan
+        tmp[:, stamp_coord[0], stamp_coord[1]] = stamp
+        stamp = tmp
+    #stamps = [get_stamp_from_image(img, stamp_shape, coord) for img in cube]
+    #stamps = np.array(stamps).reshape(list(cube_shape)[:-2] + list(stamp_shape))
+    return stamp
 
 def get_cube_of_stamps_from_image(image, stamp_shape, pixel_coordinates=None):
     """
