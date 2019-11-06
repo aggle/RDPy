@@ -29,7 +29,7 @@ class ReferenceCube(object):
         - return a subset of the covariance matrix
         - calculate the distance of an image from the reference cube entries
     """
-    def __init__(self, cube, region_mask=None, target=None, instrument=None):
+    def __init__(self, cube, region_mask=None, target=None, instrument=None, frac_references=1):
         """
         Initialize the reference cube class starting with a cube of stacked reference images
         Initialization entails:
@@ -39,9 +39,10 @@ class ReferenceCube(object):
         Args:
           cube: Nref x (Nrow x Ncol) cube of reference images (can be flat cube)
           region_mask [None]: a binary mask of which pixels in the image to use
-          target: image to be PSF-subtracted; used to sort ref images
+          target: image to be PSF-subtracted; also used to sort ref images
           instrument: Instrument class object that tells ReferenceCube which instr params to use for
               things like forward-modeling the PSF
+          frac_references (not currently used): [1] how many references to use (1=all, 0.5=half)
         """
         # instrument where the data comes from
         self.instrument = instrument
@@ -49,6 +50,7 @@ class ReferenceCube(object):
         self.cube = cube
         self.Nref = cube.shape[0]
         self.imshape = cube.shape[1:]
+        self.frac_references = frac_references
         # target image
         self.target = target
         self.target_mean = None
@@ -114,7 +116,9 @@ class ReferenceCube(object):
     def target(self, newval):
         """
         If you give the RC a target, it will automatically sort the reference cube 
-        in increasing order of distance from the target
+        in increasing order of distance from the target.
+        You should be able to choose which function to call to set the order
+        OR run all of them
         """
         try:
             self._target = newval.ravel()
@@ -126,8 +130,8 @@ class ReferenceCube(object):
         # 2. update the cube order
         try:
             self.target_region = self._target[self.flat_region_ind]
-            new_cube_order = sort_squared_distance(self._target[self.flat_region_ind],
-                                                   utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
+            new_cube_order = calc_refcube_mse(self._target_region,#[self.flat_region_ind],
+                                              self.flat_cube[:, self.flat_region_ind])#utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
         except AttributeError:
             self.target_region = self.target[:]
             new_cube_order = sort_squared_distance(self._target, self.cube)
@@ -257,6 +261,12 @@ class ReferenceCube(object):
     @kl_basis.setter
     def kl_basis(self, newval):
         self._kl_basis = newval
+        try:
+            # automatically pick out the relevant region
+            self.kl_basis_region = self.kl_basis[:, self.flat_region_ind]
+        except TypeError:
+            # this happens when kl_basis hasn't been assigned yet
+            pass
         
     @property
     def full_kl_basis(self):
@@ -403,6 +413,8 @@ class ReferenceCube(object):
         """.format(RK.generate_kl_basis.__doc__)
         argdict = {}
         argdict['references'] = kwargs.get('references', getattr(self, 'flat_cube_region'))
+        num_references = np.int(np.floor(self.frac_references * len(argdict['references'])))
+        argdict['references'] = argdict['references'][:num_references]
         argdict['kl_max'] = kwargs.get('kl_max', np.max(self.n_basis))  #len(argdict['references']))
         argdict['return_evecs'] = kwargs.get('return_evecs', False)
         argdict['return_evals'] = kwargs.get('return_evals', False)
@@ -489,7 +501,17 @@ class ReferenceCube(object):
                                                                         self.n_basis)
         else:
             self.mf_throughput = MF.calc_matched_filter_throughput(self.matched_filter)
-        
+
+    @classmethod # what does this do
+    def apply_matched_filter(self, images, ):
+        """
+        Wrapper for MF.apply_matched_filter_fft()
+        Uses class matched filter property
+        Assumes images have the same shape as self.mf_throughput
+        """
+        mf_result = MF.apply_matched_filter_fft(images, self.matched_filter)
+        mf_result /= self.mf_throughput
+        return mf_result
 
     @classmethod
     def apply_matched_filter_to_image(self, image, **kwargs):
