@@ -263,13 +263,13 @@ def get_cube_of_stamps_from_image(image, stamp_shape, pixel_coordinates=None):
 #########
 # MASKS #
 #########
-def make_annular_mask(rad_range, phi_range, center, shape, invert=False):
+def make_annular_mask(rad_range, center, shape, phi_range=(0, 2*np.pi), invert=False):
     """
     Make a mask that covers an annular section
     rad_range: tuple of (inner radius, outer radius)
-    phi_range: tuple of (phi0, phi1) (0,2*pi)
     center: row, col center of the image (where rad is measured from)
     shape: image shape tuple
+    phi_range [0, 2*pi]: tuple of (phi0, phi1) (0,2*pi)
     invert [False]: if True, 1 *outside* annulus and 0 *inside* annulus
     """
     grid = np.mgrid[:np.float(shape[0]), :np.float(shape[1])]
