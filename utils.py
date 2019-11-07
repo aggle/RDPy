@@ -310,6 +310,22 @@ def make_circular_mask(center, rad, shape, invert=False):
     return mask
 
 
+def make_bar_mask(width, angle, shape, invert=False):
+    """
+    Make a bar mask with width in pixels and rotated at a given angle
+    Args:
+      width: width of the mask in pixels
+      angle: default = 0
+      shape: tuple of the image shape
+      invert: [False] if True, 1 *outside* radius and 0 inside radius
+      nan: replace 0's with np.nan
+    Returns:
+      mask: 2-D image with a bar through it
+    """
+    pass
+
+
+
 #######################
 ### Array Reshaping ###
 #######################

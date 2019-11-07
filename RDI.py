@@ -130,8 +130,10 @@ class ReferenceCube(object):
         # 2. update the cube order
         try:
             self.target_region = self._target[self.flat_region_ind]
-            new_cube_order = sort_squared_distance(self._target_region,#[self.flat_region_ind],
-                                                   self.flat_cube[:, self.flat_region_ind])#utils.flatten_image_axes(self.cube.reshape)[:,self.flat_region_ind])
+            # calc_refcube_mse sorts from lowest = most similar
+            new_cube_order = sort_references(self.target_region,
+                                             self.flat_cube[:, self.flat_region_ind],
+                                             calc_refcube_mse)
         except AttributeError:
             self.target_region = self.target[:]
             new_cube_order = sort_squared_distance(self._target, self.cube)
@@ -590,6 +592,7 @@ def calc_refcube_pcc(targ, references):
     """
     Compute the Pearson correlation coefficient (PCC) between the target and the refs
     PCC(a, b) = cov(a, b)/(std(a) std(b))
+    does higher or lower mean more similar?
     Args:
       targ: 1- or 2-d target image
       references: 2- or 3-D cube of references
@@ -653,10 +656,11 @@ def get_ssim_pieces(pixel, targ, references, FWHM=3):
             ssim_contrast(targ_stamp, refs_stamp),\
             ssim_structural(targ_stamp, refs_stamp))
 
-def calc_refcube_ssim(targ, references, FWHM=3):
+def calc_refcube_ssim(target, references, FWHM=3):
     """
     Structural Similarity Index Metric (SSIM)
     SSIM_k = 1/Npix * Sum_i^Npix (L_i * C_i * S_i) for the kth reference frame
+    What are the range of values? does higher or lower mean more similar?
     """
     npix = targ.size
     imshape = targ.shape
@@ -678,8 +682,21 @@ def calc_refcube_ssim(targ, references, FWHM=3):
     ssim = df['ssim_per_pix'].sum() / npix # sum the arrays together and normalize
     return ssim
 
+def sort_references(targ, references, func):
+    """
+    Sort references by similarity to the target using the output of the function "func"
+    Args:
+      targ: target image
+      references: cube of reference images
+      func: function that computes a similarity metric
+    Returns:
+      sorted_indices: the indices to use to re-order the references
+    """
+    metric = func(targ, references)
+    sorted_indices = np.argsort(metric)
+    return sorted_indices
 
-# depracated - use MSE instead
+# deprecated - use MSE instead
 def sort_squared_distance(targ, references):
     """
     Calculate the euclidean distance between a target image and a set of reference images
