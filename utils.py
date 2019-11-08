@@ -277,6 +277,8 @@ def make_annular_mask(rad_range, center, shape, phi_range=(0, 2*np.pi), invert=F
     rad2D = np.linalg.norm(grid, axis=0)
     phi2D = np.arctan2(grid[0], grid[1]) + np.pi  # 0 to 2*pi
     mask = np.zeros(shape, dtype=np.int)
+    if phi_range[0] <= 0: # wrap negative angles
+        phi_range[0] += 2*np.pi
     if phi_range[0] <= phi_range[1]:
         mask[np.where(((rad2D >= rad_range[0]) & (rad2D < rad_range[1])) &
                       ((phi2D >= phi_range[0]) & (phi2D <= phi_range[1])))] = 1
