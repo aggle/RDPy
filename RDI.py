@@ -558,7 +558,85 @@ class ReferenceCube(object):
         kwargs['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
         return  MF.apply_matched_filter_to_images(image, **kwargs)
 
+    @classmethod
+    def klip_and_mf(self, return_klip=False):
+        """
+        Encapsulate the KLIP subtraction and matched filtering to make code more reusable
+        Args:
+          refcube: a reference cube object that has everything you need - 
+                   a target, kl_basis, num_basis, matched filter, and matched filter throughput
+          return_klip [False]: return results of KLIP in addition to results of KLIP+MF
+        Returns:
+          return_klip == False (default): KLIP+MF array (n_basis x Nrow x Ncol)
+          return_klip == True: tuple of (KLIP+MF array, KLIP-only array)
+          KLIPped and MFed target image that has been throughput-corrected
+        """
+        # KLIP subtraction
+        targ_kl_sub = RDI.klip_subtract_with_basis(self.target_region,
+                                                   kl_basis=self.kl_basis,
+                                                   n_bases=self.n_basis)
+        # matched filtering
+        targ_kl_sub_img = utils.make_image_from_region(targ_kl_sub,
+                                                       indices=self.flat_region_ind,
+                                                       shape=self.imshape)
 
+        where_nan = np.isnan(targ_kl_sub_img)
+        targ_kl_sub_img[where_nan] = 0
+        targ_mf = MF.apply_matched_filter_fft(targ_kl_sub_img,
+                                              matched_filter=self.matched_filter)
+        targ_mf_thpt = targ_mf/self.mf_throughput
+        if return_klip == True:
+            return targ_mf_thpt, targ_kl_sub_img
+        return targ_mf_thpt
+
+    def references_iterate_klipmf(self, return_klip=False):
+        """
+        Iteratively perform KLIP and MF on the reference cube
+        Args:
+          return_klip [False]: if True, return (mf, klip) tuple
+        Returns:
+          mf_cube: Cube that has been through KLIP+MF
+          klip_cube [if return_klip is True]: Cube that has been through KLIP
+        """
+        klip_cube = np.zeros([self.n_basis.size] + list(self.flat_cube_region.shape))
+        mf_cube = np.zeros([self.n_basis.size] + list(self.flat_cube_region.shape))
+        print("KLIP+MF on {0} reference images, may take a while...".format(len(self.cube)))
+        for i in range(len(self.cube)):
+            cube_index = list(range(len(self.cube)))
+            targ_index = cube_index.pop(i)
+            target = self.flat_cube_region[targ_index]
+            references = self.flat_cube_region[cube_index]
+
+            # KLIP subtraction
+            kl_basis = RK.generate_kl_basis(references)
+            targ_kl_sub = RK.klip_subtract_with_basis(target,
+                                                      kl_basis=kl_basis,
+                                                      n_bases=self.n_basis)
+            # matched filtering
+            targ_kl_sub_img = utils.make_image_from_region(targ_kl_sub,
+                                                           indices=self.flat_region_ind,
+                                                           shape=self.imshape)
+
+            where_nan = np.isnan(targ_kl_sub_img)
+            targ_kl_sub_img[where_nan] = 0
+            targ_mf = MF.apply_matched_filter_fft(targ_kl_sub_img,
+                                                  matched_filter=self.matched_filter)
+            targ_mf = utils.flatten_image_axes(targ_mf)[:, self.flat_region_ind]
+            # maybe you can skip this step if the MF throughput is approximately the same
+            mf_throughput = MF.calc_matched_filter_throughput_klip(self.matched_filter,
+                                                                   self.matched_filter_locations,
+                                                                   utils.make_image_from_flat(kl_basis,
+                                                                                              indices=self.flat_region_ind,
+                                                                                              shape=self.imshape),
+                                                                   self.n_basis)
+
+            targ_mf_thpt = targ_mf/mf_throughput
+            klip_cube[:, i] = targ_kl_sub  # 
+            mf_cube[:, i] = targ_mf_thpt
+        if return_klip == True:
+            return mf_cube, klip_cube
+        else:
+            return mf_cube
 
 
 ###############################
