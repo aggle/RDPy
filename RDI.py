@@ -506,7 +506,7 @@ class ReferenceCube(object):
         else:
             self.mf_throughput = MF.calc_matched_filter_throughput(self.matched_filter)
 
-    @classmethod # what does this do
+    #@classmethod # what does this do
     def apply_matched_filter(self, images, ):
         """
         Wrapper for MF.apply_matched_filter_fft()
@@ -517,7 +517,7 @@ class ReferenceCube(object):
         mf_result /= self.mf_throughput
         return mf_result
 
-    @classmethod
+    #@classmethod
     def apply_matched_filter_to_image(self, image, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the
@@ -542,7 +542,7 @@ class ReferenceCube(object):
                                                #matched_filter_locations)
         return mf_map
 
-    @classmethod
+    #@classmethod
     def apply_matched_filter_to_images(self, image, **kwargs):
         """
         This is a wrapper for RDI.generate_matched_filter that defaults to the 
@@ -558,7 +558,7 @@ class ReferenceCube(object):
         kwargs['locations'] = kwargs.get('locations', getattr(self,'matched_filter_locations'))
         return  MF.apply_matched_filter_to_images(image, **kwargs)
 
-    @classmethod
+    #@classmethod
     def klip_and_mf(self, return_klip=False):
         """
         Encapsulate the KLIP subtraction and matched filtering to make code more reusable
@@ -572,9 +572,9 @@ class ReferenceCube(object):
           KLIPped and MFed target image that has been throughput-corrected
         """
         # KLIP subtraction
-        targ_kl_sub = RDI.klip_subtract_with_basis(self.target_region,
-                                                   kl_basis=self.kl_basis,
-                                                   n_bases=self.n_basis)
+        targ_kl_sub = klip_subtract_with_basis(self.target_region,
+                                               kl_basis=self.kl_basis,
+                                               n_bases=self.n_basis)
         # matched filtering
         targ_kl_sub_img = utils.make_image_from_region(targ_kl_sub,
                                                        indices=self.flat_region_ind,
@@ -589,11 +589,12 @@ class ReferenceCube(object):
             return targ_mf_thpt, targ_kl_sub_img
         return targ_mf_thpt
 
-    def references_iterate_klipmf(self, return_klip=False):
+    def references_iterate_klipmf(self, return_klip=False, verbose=True):
         """
         Iteratively perform KLIP and MF on the reference cube
         Args:
           return_klip [False]: if True, return (mf, klip) tuple
+          verbose: print upon completeing every 10th image
         Returns:
           mf_cube: Cube that has been through KLIP+MF
           klip_cube [if return_klip is True]: Cube that has been through KLIP
@@ -633,6 +634,8 @@ class ReferenceCube(object):
             targ_mf_thpt = targ_mf/mf_throughput
             klip_cube[:, i] = targ_kl_sub  # 
             mf_cube[:, i] = targ_mf_thpt
+            if ((i+1)%10 == 0) and (verbose == True):
+                print(f"{i+1} of {len(self.cube)} images processed")
         if return_klip == True:
             return mf_cube, klip_cube
         else:
@@ -814,6 +817,14 @@ def sort_squared_distance(targ, references):
     sorted_image_indices = np.argsort(dist)[start_index:]
     return sorted_image_indices
 
+
+def calc_refcube_corr(targ, references):
+    """
+    Calculate the correlation between the target region and the reference regions
+    """
+    corr = np.array([np.dot(targ, ref)/(np.linalg.norm(targ)*np.linalg.norm(ref))
+                     for ref in references])
+    return corr
 
 ###################################
 #   FUNCTIONS DEFINED ELSEWHERE   #
