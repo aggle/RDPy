@@ -4,6 +4,7 @@ import sys
 import os
 import numpy as np
 import numpy.fft as fft
+import time
 
 import pandas as pd
 
@@ -29,7 +30,7 @@ class ReferenceCube(object):
         - return a subset of the covariance matrix
         - calculate the distance of an image from the reference cube entries
     """
-    def __init__(self, cube, region_mask=None, target=None, instrument=None, frac_references=1):
+    def __init__(self, cube, region_mask=None, target=None, instrument=None, n_basis=None, frac_references=1):
         """
         Initialize the reference cube class starting with a cube of stacked reference images
         Initialization entails:
@@ -57,7 +58,7 @@ class ReferenceCube(object):
         # reduction region
         self.region = region_mask
         # KL stuff
-        self.n_basis=None
+        self.n_basis = n_basis
         self.kl_basis = None
         self.evecs = None
         self.evals = None
@@ -83,6 +84,8 @@ class ReferenceCube(object):
         self.imshape = np.shape(newcube)[1:]
         self.flat_cube = newcube.reshape(self.Nref, reduce(lambda x,y: x*y, self.imshape)) 
         self.reference_indices = list(np.ogrid[:self.cube.shape[0]])
+        if hasattr(self, 'n_basis'):
+            self.n_basis = np.unique(np.clip(self.n_basis, 0, len(self.cube)))
     @property
     def Nref(self):
         return self._Nref
@@ -233,7 +236,18 @@ class ReferenceCube(object):
         return self._corr_matrix
 
     ##################
-    # KL basis components 
+    # KL basis components
+    @property
+    def n_basis(self):
+        """
+        KLIP modes to use
+        """
+        return self._n_basis
+    @n_basis.setter
+    def n_basis(self, newval):
+        self._n_basis = newval
+
+
     @property
     def evals(self):
         """
@@ -602,6 +616,7 @@ class ReferenceCube(object):
         klip_cube = np.zeros([self.n_basis.size] + list(self.flat_cube_region.shape))
         mf_cube = np.zeros([self.n_basis.size] + list(self.flat_cube_region.shape))
         print("KLIP+MF on {0} reference images, may take a while...".format(len(self.cube)))
+        t0 = time.time()
         for i in range(len(self.cube)):
             cube_index = list(range(len(self.cube)))
             targ_index = cube_index.pop(i)
@@ -629,13 +644,18 @@ class ReferenceCube(object):
                                                                    utils.make_image_from_flat(kl_basis,
                                                                                               indices=self.flat_region_ind,
                                                                                               shape=self.imshape),
-                                                                   self.n_basis)
+                                                                   self.n_basis,
+                                                                   verbose=False)
 
             targ_mf_thpt = targ_mf/mf_throughput
             klip_cube[:, i] = targ_kl_sub  # 
             mf_cube[:, i] = targ_mf_thpt
             if ((i+1)%10 == 0) and (verbose == True):
-                print(f"{i+1} of {len(self.cube)} images processed")
+                t1 = time.time()
+                dt = (t1 - t0)/60
+                rate = (i+1)/dt
+                print("{0} of {1} images processed in {2:0.1f} minutes.".format(i+1, len(self.cube), dt))
+                print("\tApproximately {0:0.1f} minutes remaining".format((len(self.cube)-(i+1))/rate))
         if return_klip == True:
             return mf_cube, klip_cube
         else:
@@ -737,7 +757,7 @@ def get_ssim_pieces(pixel, targ, references, FWHM=3):
             ssim_contrast(targ_stamp, refs_stamp),\
             ssim_structural(targ_stamp, refs_stamp))
 
-def calc_refcube_ssim(target, references, FWHM=3):
+def calc_refcube_ssim(targ, references, FWHM=3):
     """
     Structural Similarity Index Metric (SSIM)
     SSIM_k = 1/Npix * Sum_i^Npix (L_i * C_i * S_i) for the kth reference frame
