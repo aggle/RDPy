@@ -47,25 +47,44 @@ def get_std_pix(raveled_coords, shape, thresh):
         std_pix.append(sample_pix)
     return std_pix
 
-def get_sample_pix(targ_pix, std_pix, shape, thresh):
-    """
-    Get the pixels to sample for the noise for a target pixel
-    Args:
-      targ_pix: raveled coordinate of the pixel you want to measure the noise for
-      std_pix: raveled coordinates of thee other pixels to consider
-      shape: shape of the original image
-      thresh: distance threshold to impose
-    """
-    std_unrav = np.unravel_index(std_pix, img_shape)
-    targ_unrav = np.unravel_index(targ_pix, img_shape)
-    x_dist = std_unrav[0] - targ_unrav[0]
-    y_dist = std_unrav[1] - targ_unrav[1]
-    dist_mat = np.linalg.norm(np.stack([x_dist, y_dist], axis=0), axis=0)
-    bool_mat = np.zeros_like(dist_mat, dtype=bool)
+#def get_sample_pix(targ_pix, std_pix, shape, thresh):
+#    """
+#    Get the pixels to sample for the noise for a target pixel
+#    Args:
+#      targ_pix: raveled coordinate of the pixel you want to measure the noise for
+#      std_pix: raveled coordinates of thee other pixels to consider
+#      shape: shape of the original image
+#     thresh: distance threshold to impose
+#    """
+#    std_unrav = np.unravel_index(std_pix, img_shape)
+#    targ_unrav = np.unravel_index(targ_pix, img_shape)
+#    x_dist = std_unrav[0] - targ_unrav[0]
+#    y_dist = std_unrav[1] - targ_unrav[1]
+#    dist_mat = np.linalg.norm(np.stack([x_dist, y_dist], axis=0), axis=0)
+#    bool_mat = np.zeros_like(dist_mat, dtype=bool)
+#
+#    sample_pix = find_nearest(dist, np.arange(fwhm, dist.max(), fwhm))
 
-    sample_pix = find_nearest(dist, np.arange(fwhm, dist.max(), fwhm))
 
-def make_annular_std_map(flat_img, region_pix, img_shape, fwhm):
+def get_sample_pix(rad, phi, img_shape, fwhm):
+    """
+    get samples that won't be closer than a fwhm from each other
+    If it crashes, it's probably because rad <~ 1
+    """
+    img_center = np.floor(np.array(img_shape)/2).astype(np.int)
+    d_phi = np.arccos(1-0.5*((fwhm/rad)**2))
+    n_samples = np.floor((2*np.pi)/d_phi).astype(np.int)
+    phi_samples = np.linspace(d_phi, 2*np.pi-d_phi, n_samples) + phi
+    # now get x and y positions
+    row = np.round(rad * np.sin(phi_samples)).astype(np.int) + img_center[0]
+    col = np.round(rad * np.cos(phi_samples)).astype(np.int) + img_center[1]
+    # it's possible to get pixels that are outside the image. remove them
+    keep_index = (row < img_shape[0]) & (col < img_shape[1])
+    row = row[keep_index]
+    col = col[keep_index]
+    return row, col
+
+def make_annular_std_map(flat_img, region_pix, img_shape, fwhm, n_rings=None):
     """
     Given a flattened image region of interest, make an SNR map
     Args:
@@ -84,22 +103,20 @@ def make_annular_std_map(flat_img, region_pix, img_shape, fwhm):
     rad_pix_region = rad_pix.flat[region_pix] # radial values in the ROI
     phi_pix_region = phi_pix.flat[region_pix] # radial values in the ROI
     ann_range = rad_pix_region.min(), rad_pix_region.max()
+    if n_rings is None:
+        d_rad = 2*fwhm
+    else:
+        d_rad = np.array(ann_range)/n_rings
 
     # for every pixel, find the the std
     for i, pix in enumerate(region_pix):
         # get the radius and angle to sample a circle
         rad = rad_pix_region[i]
         phi = phi_pix_region[i]
-        # get sampels that won't be closer than a fwhm from each other
-        d_phi = np.arccos(1-0.5*((fwhm/rad)**2))
-        n_samples = np.floor((2*np.pi)/d_phi).astype(np.int)
-        phi_samples = np.linspace(d_phi, 2*np.pi-d_phi, n_samples) + phi
-        # now get x and y positions
-        row = np.round(rad * np.sin(phi_samples)).astype(np.int) + img_center[0]
-        col = np.round(rad * np.cos(phi_samples)).astype(np.int) + img_center[1]
-        ttest_corr = np.sqrt(1+1./len(phi_samples))
-        print(pix, row, col)
-        std_vals.loc[pix] = np.nanstd(utils.make_image_from_flat(flat_img, region_pix, img_shape)[:, row, col])
+        # get samples that won't be closer than a fwhm from each other
+        row, col = get_sample_pix(rad, phi, img_shape, fwhm)
+        ttest_corr = np.sqrt(1+1./len(row))
+        std_vals.loc[pix] = np.nanstd(utils.make_image_from_flat(flat_img, region_pix, img_shape, squeeze=False)[:, row, col])
         std_vals.loc[pix] /= ttest_corr
     return np.squeeze(std_vals.T.values)
 
@@ -114,7 +131,9 @@ def make_annular_snr_map(flat_img, region_pix, img_shape, fwhm):
       n_rings: number of annnuli. if None, defaults to width of 2*fwhm
     """
     std_map = make_annular_std_map(flat_img, region_pix, img_shape, fwhm)
-    return np.squeeze(flat_img/std_map)
+    snr_img = utils.make_image_from_flat(np.squeeze(flat_img/std_map),
+                                         region_pix, img_shape)
+    return snr_img
 
 ##############
 # ROC curves #
