@@ -362,7 +362,7 @@ def flatten_leading_axes(array, axis=-1):
     return np.reshape(array, newshape)
 
 
-def make_image_from_flat(flat, indices=None, shape=None):
+def make_image_from_flat(flat, indices=None, shape=None, squeeze=True):
     """
     put the flattened region back into an image. if no indices or shape are specified, assumes that
     the region of N pixels is a square with Nx = Ny = sqrt(N). Only operates on the last axis.
@@ -371,6 +371,7 @@ def make_image_from_flat(flat, indices=None, shape=None):
         indices: [None] Npix array of flattened pixel coordinates 
                  corresponding to the region
         shape: [None] image shape
+        squeeze [True]: gets rid of extra axes 
     Returns:
         img: an image (or array of) with dims `shape` and with nan's in 
             whatever indices are not explicitly set
@@ -396,8 +397,9 @@ def make_image_from_flat(flat, indices=None, shape=None):
     # fill in the image
     img[:,indices] = flat
     # reshape and get rid of extra axes, if any
-    img = np.squeeze(img.reshape(list(oldshape[:-1])+list(shape)))
-
+    img = img.reshape(list(oldshape[:-1])+list(shape))
+    if squeeze == True:
+        img = np.squeeze(img)
     return img
 # for backwards compatibility
 make_image_from_region = make_image_from_flat
